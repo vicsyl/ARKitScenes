@@ -3,6 +3,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import math
+
 import numpy as np
 import os
 import time
@@ -14,7 +16,7 @@ from utils.tenFpsDataLoader import TenFpsDataLoader, extract_gt
 import utils.visual_utils as visual_utils
 import matplotlib.pyplot as plt
 from PIL import Image
-from pnp_utils import project_from_frame, R_t_from_frame_pose, get_deviation
+from pnp_utils import project_from_frame, R_t_from_frame_pose, get_deviation_from_plane, get_deviation_from_axis
 
 dc = ARKitDatasetConfig()
 from pathlib import Path
@@ -50,11 +52,12 @@ if __name__ == "__main__":
         help="gt path to annotation json file",
     )
 
-    # this shouyld be 1
+    # this should be 1
     parser.add_argument("--frame_rate", default=1, type=int, help="sampling rate of frames")
     parser.add_argument(
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
     )
+    parser.add_argument("--vis", action="store_true", default=False)
 
     args = parser.parse_args()
     scenes = get_scene_ids_gts(args.data_root)
@@ -88,24 +91,16 @@ if __name__ == "__main__":
             if i % args.frame_rate != 0:
                 continue
 
+            print(f"Processing frame: {i}")
+
             frame = loader[i]
             image_path = frame["image_path"]
             image = frame["image"]
             pcd = frame["pcd"]
             pose = frame["pose"]
             rgb = frame["color"]
-            #urc, urc_inv = rotation.upright_camera_relative_transform(pose)
-            #urc = pose
-
-            # rotate pcd to urc coordinate
-            # pcd_or = pcd.copy()
-            # pcd = rotation.rotate_pc(pcd, urc)
-
-            # 2. gt_boxes
-            # 2.1 get all boxes to urc coord
-            # 2.2 get box codes
             boxes = box_utils.corners_to_boxes(boxes_corners)
-            # 2.3 apply a simple box-filter by removing boxes with < 20 points
+            # remove boxes with < 20 points
             # (n, m)
             mask_pts_in_box = box_utils.points_in_boxes(pcd, boxes_corners)
             # (m, )
@@ -131,53 +126,79 @@ if __name__ == "__main__":
             # )
             #projections = K @ ((np.linalg.inv(pose) @ pcd_ort)[:3])
 
-            R, t = R_t_from_frame_pose(pose)
-            projections = K @ (R @ pcd.T + t)
+            R_gt, t = R_t_from_frame_pose(pose)
+
+            X = np.array([1.0, 0, 0])
+            Y = np.array([0, 1.0, 0])
+            Z = np.array([0, 0, 1.0])
+
+            def is_close(a, b):
+                ang_tol = 2
+                tol = ang_tol * math.pi / 180
+                return math.fabs(a - b) < tol
+
+
+            R_y_dev = get_deviation_from_axis(R_gt, Y)
+            x_hor_dev = get_deviation_from_plane(R_gt, X, Y)
+            z_hor_dev = get_deviation_from_plane(R_gt, Z, Y)
+            print(f"R_y_dev: {R_y_dev} ", end="")
+            print(f"x_hor_dev: {x_hor_dev} ", end="")
+            print(f"z_hor_dev: {z_hor_dev} ")
+            is_R_y = is_close(R_y_dev, 0)
+            is_x_hor = is_close(x_hor_dev, 0)
+            is_z_hor = is_close(z_hor_dev, 0)
+            print(f"is_R_y: {is_R_y} ", end="")
+            print(f"is_x_hor: {is_x_hor} ", end="")
+            print(f"is_z_hor: {is_z_hor} ")
+
+            projections = K @ (R_gt @ pcd.T + t)
             projections = projections / projections[2]
             assert np.all(projections2 == projections)
 
-            _, ax = plt.subplots(1, 1, figsize=(9, 16))
+            if args.vis:
 
-            #_, ax = plt.subplots(1, 1)
-            # with open(image_path, "rb") as fid:
-            #     data = Image.open(fid)
-            #     data.load()
+                _, ax = plt.subplots(1, 1, figsize=(9, 16))
 
-            # Show image.
-            img = frame['image']
-            ax.imshow(img)
-            # ax.imshow(data)
-            ax.set_xlim(0, img.shape[0])
-            ax.set_ylim(img.shape[1], 0)
+                #_, ax = plt.subplots(1, 1)
+                # with open(image_path, "rb") as fid:
+                #     data = Image.open(fid)
+                #     data.load()
 
-            ax.plot(projections[0],
-                    projections[1],
-                    'r1',
-                    markersize=1)
+                # Show image.
+                img = frame['image']
+                ax.imshow(img)
+                # ax.imshow(data)
+                ax.set_xlim(0, img.shape[0])
+                ax.set_ylim(img.shape[1], 0)
 
-            # mask_pts_in_box_w = box_utils.points_in_boxes(pcd, boxes_corners)
-            # TODO - arbitrary number of objects
-            color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
-            for b_i in range(9):
-                proj_to_use = projections[:, mask_pts_in_box[:, b_i]]
-                fmt = f"{color[b_i]}x"
-                fmt2 = f"{color[b_i]}o"
-                # print(f"fmt: {fmt}")
+                ax.plot(projections[0],
+                        projections[1],
+                        'r1',
+                        markersize=1)
 
-                ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=4)
+                # mask_pts_in_box_w = box_utils.points_in_boxes(pcd, boxes_corners)
+                # TODO - arbitrary number of objects
+                color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
+                for b_i in range(9):
+                    proj_to_use = projections[:, mask_pts_in_box[:, b_i]]
+                    fmt = f"{color[b_i]}x"
+                    fmt2 = f"{color[b_i]}o"
+                    # print(f"fmt: {fmt}")
 
-                centers_display = centers_2d[:, b_i: b_i + 1]
-                centers_display = centers_display[:, centers_display[2] == 1.0]
-                ax.plot(centers_display[0], centers_display[1], fmt2, markersize="20")
+                    ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=4)
 
-                one_box = boxes_crns[b_i].T
-                crns_display = one_box[:, one_box[2] == 1.0]
-                ax.plot(crns_display[0], crns_display[1], fmt, markersize="15")
+                    centers_display = centers_2d[:, b_i: b_i + 1]
+                    centers_display = centers_display[:, centers_display[2] == 1.0]
+                    ax.plot(centers_display[0], centers_display[1], fmt2, markersize="20")
 
-            np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
-            ax.axis("off")
-            Path(f"imgs/{scene_id}").mkdir(parents=True, exist_ok=True)
-            plt.savefig(f"imgs/{scene_id}/all_{i}.png")
+                    one_box = boxes_crns[b_i].T
+                    crns_display = one_box[:, one_box[2] == 1.0]
+                    ax.plot(crns_display[0], crns_display[1], fmt, markersize="15")
+
+                np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
+                ax.axis("off")
+                Path(f"imgs/{scene_id}").mkdir(parents=True, exist_ok=True)
+                plt.savefig(f"imgs/{scene_id}/all_{i}.png")
 
         elapased = time.time() - start_time_scene
         print(f"{scene_id}: elapsed time: %f sec" % elapased)
