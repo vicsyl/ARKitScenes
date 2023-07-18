@@ -12,6 +12,9 @@ import utils.rotation as rotation
 from utils.taxonomy import class_names, ARKitDatasetConfig
 from utils.tenFpsDataLoader import TenFpsDataLoader, extract_gt
 import utils.visual_utils as visual_utils
+import matplotlib.pyplot as plt
+from PIL import Image
+from pnp_utils import project_from_frame
 
 dc = ARKitDatasetConfig()
 
@@ -45,6 +48,7 @@ if __name__ == "__main__":
     # if skipped or no gt, we will not bother calling further steps
     gt_fn = args.gt_path
     skipped, boxes_corners, centers, sizes, labels, uids = extract_gt(gt_fn)
+    boxes_corners_c = boxes_corners.copy()
     if skipped or boxes_corners.shape[0] == 0:
         exit()
     n_gt = boxes_corners.shape[0]
@@ -57,6 +61,7 @@ if __name__ == "__main__":
         dataset_cfg=None,
         class_names=class_names,
         root_path=data_path,
+        world_coordinate=True
     )
 
     # step 0.3: output folder, make dir
@@ -68,11 +73,13 @@ if __name__ == "__main__":
     t = time.time()
 
     world_pc, world_rgb = [], []
-    args.frame_rate = max(2, len(loader) // 300)
     total_mask = []
-    for i in range(len(loader)):
+    mmin = 0
+    count = 500
+    for i in range(mmin, min(mmin + int(args.frame_rate) * count + 1, len(loader))):
+
         frame = loader[i]
-        print(i, frame["image_path"])
+        # print(i, frame["image_path"])
         image_path = frame["image_path"]
         frame_id = image_path.split(".")[-2]
         frame_id = frame_id.split("_")[-1]
@@ -84,12 +91,13 @@ if __name__ == "__main__":
         pose = frame["pose"]
         rgb = frame["color"]
         urc, urc_inv = rotation.upright_camera_relative_transform(pose)
-
+        urc = pose
         # in case we jump frame with args.frame_rate > 1
-        if i % args.frame_rate != 0:
+        if i % int(args.frame_rate) != 0:
             continue
 
         # rotate pcd to urc coordinate
+        pcd_or = pcd.copy()
         pcd = rotation.rotate_pc(pcd, urc)
 
         # 2. gt_boxes
@@ -113,6 +121,97 @@ if __name__ == "__main__":
             "pose": pose,
         }
 
+        # my logic
+        P_xy = np.array([
+            [0, 1, 0],
+            [1, 0, 0],
+            [0, 0, 1],
+        ])
+        P_z_pi = np.array([
+            [-1, 0, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+        ])
+
+        # pose = urc
+        K = frame['intrinsics']
+        R_gt = pose[:3, :3]
+        t_gt = pose[:3, 3:4]
+
+        R_gt2 = P_xy @ R_gt @ P_xy
+        t_gt2 = t_gt.copy()
+        t_gt2[0], t_gt2[1] = t_gt2[1], t_gt2[0]
+
+        R_gt3 = P_z_pi @ R_gt
+        t_gt3 = t_gt
+        R_used = R_gt
+        t_used = t_gt
+        suffix = "or"
+
+        img = frame['image']
+
+        print(f"R used :\n{R_used}")
+        print(f"t used:\n{t_used}")
+
+        # projections = K @ (R @ pcd.T + t_gt)
+        projections2 = project_from_frame(frame['intrinsics'], frame['pose'], pcd_or).T
+        boxes_crns = project_from_frame(frame['intrinsics'], frame['pose'], boxes_corners_c.reshape(-1, 3))
+        boxes_crns = boxes_crns.reshape(-1, 8, 3)
+        centers_2d = project_from_frame(frame['intrinsics'], frame['pose'], centers).T
+
+        pcd_ort = np.vstack(
+            (pcd_or.T, np.ones((1, pcd_or.T.shape[1])))
+        )
+        projections = K @ ((np.linalg.inv(pose) @ pcd_ort)[:3])
+        # projections = K @ (R_used @ pcd_or.T + t_used)
+        # projections = K @ pcd_or.T
+        projections = projections / projections[2]
+
+        assert np.all(projections2 == projections)
+
+        _, ax = plt.subplots(1, 1, figsize=(9, 16))
+        #_, ax = plt.subplots(1, 1)
+        with open(image_path, "rb") as fid:
+            data = Image.open(fid)
+            data.load()
+
+        # Show image.
+        ax.imshow(img)
+        # ax.imshow(data)
+        ax.set_xlim(0, data.size[0])
+        ax.set_ylim(data.size[1], 0)
+
+        ax.plot(projections[0],
+                projections[1],
+                'r1',
+                markersize=1)
+                #markeredgewidth=markeredgewidth)
+
+        mask_pts_in_box_w = box_utils.points_in_boxes(pcd_or, boxes_corners)
+        color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
+        for b_i in range(9):
+            proj_to_use = projections[:, mask_pts_in_box_w[:, b_i]]
+            fmt = f"{color[b_i]}x"
+            fmt2 = f"{color[b_i]}o"
+            print(f"fmt: {fmt}")
+
+            ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=4)
+
+            centers_display = centers_2d[:, b_i: b_i + 1]
+            centers_display = centers_display[:, centers_display[2] == 1.0]
+            ax.plot(centers_display[0], centers_display[1], fmt2, markersize="20")
+
+            one_box = boxes_crns[b_i].T
+            crns_display = one_box[:, one_box[2] == 1.0]
+            ax.plot(crns_display[0], crns_display[1], fmt, markersize="15")
+
+        np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
+        ax.set_title(f"{R_used}\n{t_used}")
+        ax.axis("off")
+        plt.savefig(f"imgs/{suffix}_{i}.png")
+        # plt.show()
+        print()
+
         # save points and boxes
         # ./output_dir/{scene_id}_data/xxx_x_pc.npy
         data_save_fn = "%s_%d_pc.npy" % (args.scene_id, i)
@@ -128,7 +227,17 @@ if __name__ == "__main__":
             # 1. points and boxes align
             corners_recon = box_utils.boxes_to_corners_3d(boxes)
             corners_recon = corners_recon[mask_box]
-            visual_utils.visualize_o3d(pcd, corners_recon)
+            visual_utils.visualize_o3d(pcd, corners_recon, rgb)
 
     elapased = time.time() - t
     print("total time: %f sec" % elapased)
+
+
+# continue:
+# - all needed data / per scene !!
+# - how to run it on the server?
+# - clean up and externalize
+# - run to generate the data
+# - which frames / scenes it will be used?
+# - measure the time to read the data
+# - adopt to original project (new dataset)
