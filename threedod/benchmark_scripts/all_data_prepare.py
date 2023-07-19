@@ -225,7 +225,6 @@ if __name__ == "__main__":
                     min_2dy = np.min(proj_to_use[1])
                     max_2dy = np.max(proj_to_use[1])
 
-                    x_i.append(centers_proj_in_2d[:2, obj_i])
                     center = centers_3d[obj_i]
                     X_i.append(center)
 
@@ -242,6 +241,8 @@ if __name__ == "__main__":
                     # east, north - east, north, etc..(x0, x1), (y0, y1)
                     c_x = (min_2dx + max_2dx) / 2
                     c_y = (min_2dy + max_2dy) / 2
+                    x_i.append([c_x, c_y])
+
                     two_d_corners = [
                         [max_2dx, c_y],
                         [max_2dx, max_2dy],
