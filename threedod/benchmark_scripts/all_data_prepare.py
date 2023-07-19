@@ -169,13 +169,12 @@ if __name__ == "__main__":
             if is_x_hor:
                 all_x_hor += 1
 
-            if not is_R_y and not is_x_hor and not is_z_hor:
-                print("Frame skipped, not pose not aligned")
-                continue
-
             print(f"is_R_y: {is_R_y} ", end="")
             print(f"is_x_hor: {is_x_hor} ", end="")
             print(f"is_z_hor: {is_z_hor} ")
+            if not is_R_y and not is_x_hor and not is_z_hor:
+                print("Frame skipped, not pose not aligned")
+                continue
 
             def in_img(xy_np):
                 img = frame['image']
