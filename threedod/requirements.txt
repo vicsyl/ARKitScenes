@@ -39,3 +39,5 @@ vtk==9.0.3
 wslink==1.0.7
 yarl==1.6.3
 zope.interface==5.4.0
+pyhocon
+pyquaternion
