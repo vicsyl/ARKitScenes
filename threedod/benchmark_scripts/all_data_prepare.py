@@ -54,7 +54,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--vis", action="store_true", default=False)
     parser.add_argument("--max_scenes", type=int, default=None)
-    parser.add_argument("--ang_tol", type=int, default=2)
+    parser.add_argument("--ang_tol", type=int, default=5)
     parser.add_argument("--min_obj", type=int, default=2)
 
     args = parser.parse_args()
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         scenes = scenes[:args.max_scenes]
 
     ang_tol = args.ang_tol
-    min_objects = args.min_objects
+    min_objects = args.min_obj
 
     print(f"ang_tol: {ang_tol}")
     print(f"{len(scenes)} scenes:")
@@ -169,6 +169,10 @@ if __name__ == "__main__":
             if is_x_hor:
                 all_x_hor += 1
 
+            if not is_R_y and not is_x_hor and not is_z_hor:
+                print("Frame skipped, not pose not aligned")
+                continue
+
             print(f"is_R_y: {is_R_y} ", end="")
             print(f"is_x_hor: {is_x_hor} ", end="")
             print(f"is_z_hor: {is_z_hor} ")
@@ -268,9 +272,9 @@ if __name__ == "__main__":
                              K=K, # np.ndarray(3, 3)
                              # TODO
                              R_cs_l=R_gt_q_l, # list[4] : quaternion
-                             t_cs_l=t_gt.tolist(), # list[3]: meters
+                             t_cs_l=t_gt[:, 0].tolist(), # list[3]: meters
                              R_ego_l=R_gt_q_l, # list[4] : quaternion
-                             t_ego_l=t_gt.tolist(), # list[3]: meters
+                             t_ego_l=t_gt[:, 0].tolist(), # list[3]: meters
                              X_i_up_down=np.array([X_i_up, X_i_down]), # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
                              # TODO: NOW just pass it in a more convenient way
                              two_d_cmcs=[np.array(l).T for l in all_2d_corners], # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
