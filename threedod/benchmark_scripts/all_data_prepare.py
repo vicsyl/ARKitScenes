@@ -217,8 +217,9 @@ if __name__ == "__main__":
                 one_box = boxes_crns[obj_i].T
                 mask_ok = vectors_ok(one_box)
                 minimal_corners = 6
-                if sum(mask_ok) >= minimal_corners:
-                    proj_to_use = projections[:, mask_pts_in_box[:, obj_i]]
+                proj_to_use = projections[:, mask_pts_in_box[:, obj_i]]
+                min_projections = 100
+                if sum(mask_ok) >= minimal_corners and proj_to_use.shape[1] >= min_projections:
                     min_2dx = np.min(proj_to_use[0])
                     max_2dx = np.max(proj_to_use[0])
                     min_2dy = np.min(proj_to_use[1])
