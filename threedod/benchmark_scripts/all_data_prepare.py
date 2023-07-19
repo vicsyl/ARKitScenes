@@ -61,7 +61,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     scenes = get_scene_ids_gts(args.data_root)
-    print(f"scenes: {scenes}")
+    print(f"{len(scenes)} scenes:")
+    print("\n".join([str(s) for s in scenes]))
+
+    all_frames = 0
+    all_R_y = 0
+    all_x_hor = 0
+    all_z_hor = 0
 
     start_time = time.time()
     for scene_id, gt_path in scenes:
@@ -88,8 +94,10 @@ if __name__ == "__main__":
         start_time_scene = time.time()
         for i in range(len(loader)):
 
-            if i % args.frame_rate != 0:
-                continue
+            all_frames += 1
+
+            # if i % args.frame_rate != 0:
+            #     continue
 
             print(f"Processing frame: {i}")
 
@@ -147,6 +155,14 @@ if __name__ == "__main__":
             is_R_y = is_close(R_y_dev, 0)
             is_x_hor = is_close(x_hor_dev, 0)
             is_z_hor = is_close(z_hor_dev, 0)
+
+            if is_R_y:
+                all_R_y += 1
+            if is_z_hor:
+                all_z_hor += 1
+            if is_x_hor:
+                all_x_hor += 1
+
             print(f"is_R_y: {is_R_y} ", end="")
             print(f"is_x_hor: {is_x_hor} ", end="")
             print(f"is_z_hor: {is_z_hor} ")
@@ -204,6 +220,11 @@ if __name__ == "__main__":
         print(f"{scene_id}: elapsed time: %f sec" % elapased)
     elapased = time.time() - start_time
     print(f"total time: %f sec" % elapased)
+
+    print(f"all_frames: {all_frames}")
+    print(f"all_R_y: {all_R_y}")
+    print(f"all_x_hor: {all_x_hor}")
+    print(f"all_z_hor: {all_z_hor}")
 
 
 # continue:
