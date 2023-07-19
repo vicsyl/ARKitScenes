@@ -132,17 +132,18 @@ if __name__ == "__main__":
 
             # projections = K @ (R @ pcd.T + t_gt)
             K = frame["intrinsics"]
-            projections2 = project_from_frame(K, pose, pcd).T
+            projections = project_from_frame(K, pose, pcd).T
+
+            R_gt, t_gt = R_t_from_frame_pose(pose)
+
+            # test
+            projections2 = K @ (R_gt @ pcd.T + t_gt)
+            projections2 = projections2 / projections2[2]
+            assert np.all(projections2 == projections)
+
             boxes_crns = project_from_frame(K, pose, boxes_corners.reshape(-1, 3))
             boxes_crns = boxes_crns.reshape(-1, 8, 3)
             centers_proj_in_2d = project_from_frame(K, pose, centers_3d).T
-
-            # pcd_ort = np.vstack(
-            #     (pcd.T, np.ones((1, pcd.T.shape[1])))
-            # )
-            #projections = K @ ((np.linalg.inv(pose) @ pcd_ort)[:3])
-
-            R_gt, t_gt = R_t_from_frame_pose(pose)
 
             X = np.array([1.0, 0, 0])
             Y = np.array([0, 1.0, 0])
@@ -286,11 +287,6 @@ if __name__ == "__main__":
                              sample_data_token=frame_index, # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)))
-
-            # test
-            projections = K @ (R_gt @ pcd.T + t_gt)
-            projections = projections / projections[2]
-            assert np.all(projections2 == projections)
 
             if args.vis:
 
