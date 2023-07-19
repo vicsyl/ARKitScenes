@@ -58,9 +58,12 @@ if __name__ == "__main__":
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
     )
     parser.add_argument("--vis", action="store_true", default=False)
+    parser.add_argument("--max_scenes", type=int, default=None)
 
     args = parser.parse_args()
     scenes = get_scene_ids_gts(args.data_root)
+    if args.max_scenes is not None:
+        scenes = scenes[:args.max_scenes]
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
 
