@@ -53,14 +53,18 @@ if __name__ == "__main__":
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
     )
     parser.add_argument("--vis", action="store_true", default=False)
+    parser.add_argument("--min_corners", type=int, default=6)
+    parser.add_argument("--min_scenes", type=int, default=0)
     parser.add_argument("--max_scenes", type=int, default=None)
     parser.add_argument("--ang_tol", type=int, default=5)
     parser.add_argument("--min_obj", type=int, default=2)
-
     args = parser.parse_args()
+    print(f"Args:\{args}")
+
     scenes = get_scene_ids_gts(args.data_root)
-    if args.max_scenes is not None:
+    if args.min_scenes is not None:
         scenes = scenes[:args.max_scenes]
+    scenes = scenes[args.min_scenes:]
 
     ang_tol = args.ang_tol
     min_objects = args.min_obj
@@ -173,7 +177,7 @@ if __name__ == "__main__":
             print(f"is_R_y: {is_R_y} ", end="")
             print(f"is_x_hor: {is_x_hor} ", end="")
             print(f"is_z_hor: {is_z_hor} ")
-            if not is_R_y and not is_x_hor and not is_z_hor:
+            if not is_R_y and not is_x_hor and not is_z_hor and not args.vis:
                 print("Frame skipped, not pose not aligned")
                 continue
 
@@ -209,6 +213,7 @@ if __name__ == "__main__":
             all_orientations = []
             widths_heights = []
             lwhs = []
+            corners_counts = []
             # sample_data_token = frame_index
             # both_2D_3D = list(range(n))
             for obj_i in range(centers_proj_in_2d.shape[1]):
@@ -216,10 +221,11 @@ if __name__ == "__main__":
 
                 one_box = boxes_crns[obj_i].T
                 mask_ok = vectors_ok(one_box)
-                minimal_corners = 6
                 proj_to_use = projections[:, mask_pts_in_box[:, obj_i]]
                 min_projections = 100
-                if sum(mask_ok) >= minimal_corners and proj_to_use.shape[1] >= min_projections:
+                corners_count = sum(mask_ok)
+                if corners_count  >= args.min_corners and proj_to_use.shape[1] >= min_projections:
+                    corners_counts.append(corners_count)
                     min_2dx = np.min(proj_to_use[0])
                     max_2dx = np.max(proj_to_use[0])
                     min_2dy = np.min(proj_to_use[1])
@@ -267,8 +273,11 @@ if __name__ == "__main__":
                 objects_counts_map[obj_count] = 0
             objects_counts_map[obj_count] += 1
 
-            if obj_count >= min_objects:
+            objects_ok = False
+            if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
+                objects_ok = True
                 append_entry(data_entries,
+                             corners_counts=corners_counts,
                              x_i=np.array(x_i), # np.ndarray(n, 2)
                              X_i=np.asarray(X_i), # np.ndarray(n, 3)
                              K=K, # np.ndarray(3, 3)
@@ -289,6 +298,10 @@ if __name__ == "__main__":
                              sample_data_token=frame_index, # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)))
+            else:
+                print("Frame skipped")
+                print(f"obj_count >= min_objects: {obj_count >= min_objects}")
+                print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
 
             if args.vis:
 
@@ -306,10 +319,10 @@ if __name__ == "__main__":
                 ax.set_xlim(0, img.shape[0])
                 ax.set_ylim(img.shape[1], 0)
 
-                ax.plot(projections[0],
-                        projections[1],
-                        'r1',
-                        markersize=1)
+                # ax.plot(projections[0],
+                #         projections[1],
+                #         'r1',
+                #         markersize=1)
 
                 # mask_pts_in_box_w = box_utils.points_in_boxes(pcd, boxes_corners)
                 # TODO - arbitrary number of objects
@@ -333,7 +346,10 @@ if __name__ == "__main__":
                 np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
                 ax.axis("off")
                 Path(f"imgs/{scene_id}").mkdir(parents=True, exist_ok=True)
-                plt.savefig(f"imgs/{scene_id}/all_{frame_index}.png")
+                if objects_ok:
+                    plt.savefig(f"imgs/{scene_id}/ok_{frame_index}.png")
+                else:
+                    plt.savefig(f"imgs/{scene_id}/all_{frame_index}.png")
 
         elapased = time.time() - start_time_scene
         print(f"{scene_id}: elapsed time: %f sec" % elapased)
@@ -344,7 +360,8 @@ if __name__ == "__main__":
     out_hocon_dir = "./hocons"
     Path(out_hocon_dir).mkdir(parents=True, exist_ok=True)
 
-    suffix = f"_max={args.max_scenes}" if args.max_scenes is not None else ""
+    suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
+    suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
     fp = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}.conf"
 
     save_to_hocon(fp, data_entries, objects_counts_map, vars(args))

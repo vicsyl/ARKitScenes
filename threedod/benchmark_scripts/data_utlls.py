@@ -28,6 +28,7 @@ def save_to_hocon(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
 
 def append_entry(entries_list,
+                 corners_counts,
                  x_i,
                  X_i,
                  K,
@@ -48,6 +49,7 @@ def append_entry(entries_list,
     """
     Args:
         entries_list:
+        corners_counts: list[]: int
         x_i: np.ndarray(n, 2)
         X_i: np.ndarray(n, 3)
         K: np.ndarray(3, 3)
@@ -67,9 +69,7 @@ def append_entry(entries_list,
         widths_heights_new: list[n] of list[2]
         sample_data_token: sample_data_token (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
         both_2D_3D: list[n] : object ids: AFAIK unused
-
     Returns:
-
     """
 
 
@@ -80,6 +80,7 @@ def append_entry(entries_list,
     two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
 
     p3p_map = {"x_i": x_i,
+               "corners_counts": corners_counts,
                # east, north-east, north, etc.. (x0, x1), (y0, y1)
                "x_i_corners_mps": two_d_cmcs,
                "X_i": X_i,
