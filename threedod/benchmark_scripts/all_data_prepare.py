@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("--min_corners", type=int, default=6)
     parser.add_argument("--min_scenes", type=int, default=0)
     parser.add_argument("--max_scenes", type=int, default=None)
-    parser.add_argument("--ang_tol", type=int, default=5)
+    parser.add_argument("--ang_tol", type=int, default=2)
     parser.add_argument("--min_obj", type=int, default=2)
     parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
