@@ -185,7 +185,8 @@ if __name__ == "__main__":
                 print(f"is_x_hor: {is_x_hor} ", end="")
                 print(f"is_z_hor: {is_z_hor} ")
             if not is_R_y and not is_x_hor and not is_z_hor and not args.vis:
-                print("Frame skipped, not pose not aligned")
+                if args.verbose:
+                    print("Frame skipped, not pose not aligned")
                 continue
 
             def in_img(xy_np):
