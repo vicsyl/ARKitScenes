@@ -8,14 +8,14 @@ def get_deviation_from_plane(R, unit_axis, plane_normal):
     assert np.isclose(np.linalg.norm(plane_normal), 1.0)
     axis = R.T @ unit_axis
     deviation = math.fabs(math.pi / 2 - math.acos(axis @ plane_normal))
-    return deviation
+    return deviation * 180 / math.pi
 
 
 def get_deviation_from_axis(R, unit_axis):
     assert np.isclose(np.linalg.norm(unit_axis), 1.0)
     y = R @ unit_axis
     deviation = np.arccos(y @ unit_axis)
-    return deviation
+    return deviation * 180 / math.pi
 
 
 def R_t_from_frame_pose(frame_pose):

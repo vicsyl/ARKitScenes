@@ -58,18 +58,25 @@ if __name__ == "__main__":
     parser.add_argument("--max_scenes", type=int, default=None)
     parser.add_argument("--ang_tol", type=int, default=5)
     parser.add_argument("--min_obj", type=int, default=2)
+    parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
     print(f"Args:\{args}")
+
+    ang_tol = args.ang_tol
+    min_objects = args.min_obj
+    print(f"ang_tol: {ang_tol}")
+    out_hocon_dir = "./hocons"
+    Path(out_hocon_dir).mkdir(parents=True, exist_ok=True)
+    suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
+    suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
+    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}_ang={ang_tol}.conf"
+    print(f"Will save into: {save_file_path}")
 
     scenes = get_scene_ids_gts(args.data_root)
     if args.min_scenes is not None:
         scenes = scenes[:args.max_scenes]
     scenes = scenes[args.min_scenes:]
 
-    ang_tol = args.ang_tol
-    min_objects = args.min_obj
-
-    print(f"ang_tol: {ang_tol}")
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
 
@@ -82,7 +89,7 @@ if __name__ == "__main__":
     all_z_hor = 0
 
     start_time = time.time()
-    for scene_id, gt_path in scenes:
+    for scene_index, (scene_id, gt_path) in enumerate(scenes):
 
         skipped, boxes_corners, centers_3d, sizes, labels, uids = extract_gt(gt_path)
         if skipped:
@@ -95,6 +102,7 @@ if __name__ == "__main__":
             continue
 
         data_path = os.path.join(args.data_root, scene_id, f"{scene_id}_frames")
+        print(f"scene index: {scene_index}")
         print(f"data_path: {os.path.abspath(data_path)}")
         loader = TenFpsDataLoader(
             dataset_cfg=None,
@@ -110,8 +118,6 @@ if __name__ == "__main__":
 
             if frame_index % args.frame_rate != 0:
                 continue
-
-            print(f"Processing frame: {frame_index}")
 
             frame = loader[frame_index]
             image_path = frame["image_path"]
@@ -154,15 +160,15 @@ if __name__ == "__main__":
             Z = np.array([0, 0, 1.0])
 
             def is_close(a, b):
-                tol = ang_tol * math.pi / 180
-                return math.fabs(a - b) < tol
+                return math.fabs(a - b) < ang_tol
 
             R_y_dev = get_deviation_from_axis(R_gt, Y)
             x_hor_dev = get_deviation_from_plane(R_gt, X, Y)
             z_hor_dev = get_deviation_from_plane(R_gt, Z, Y)
-            print(f"R_y_dev: {R_y_dev} ", end="")
-            print(f"x_hor_dev: {x_hor_dev} ", end="")
-            print(f"z_hor_dev: {z_hor_dev} ")
+            if args.verbose:
+                print(f"R_y_dev: {R_y_dev} ", end="")
+                print(f"x_hor_dev: {x_hor_dev} ", end="")
+                print(f"z_hor_dev: {z_hor_dev} ")
             is_R_y = is_close(R_y_dev, 0)
             is_x_hor = is_close(x_hor_dev, 0)
             is_z_hor = is_close(z_hor_dev, 0)
@@ -174,9 +180,10 @@ if __name__ == "__main__":
             if is_x_hor:
                 all_x_hor += 1
 
-            print(f"is_R_y: {is_R_y} ", end="")
-            print(f"is_x_hor: {is_x_hor} ", end="")
-            print(f"is_z_hor: {is_z_hor} ")
+            if args.verbose:
+                print(f"is_R_y: {is_R_y} ", end="")
+                print(f"is_x_hor: {is_x_hor} ", end="")
+                print(f"is_z_hor: {is_z_hor} ")
             if not is_R_y and not is_x_hor and not is_z_hor and not args.vis:
                 print("Frame skipped, not pose not aligned")
                 continue
@@ -197,7 +204,6 @@ if __name__ == "__main__":
                 mask = np.logical_and(mask, xyl_c[0] < img.shape[0])
                 mask = np.logical_and(mask, xyl_c[1] < img.shape[1])
                 return mask
-
 
             # centers_2d_data = centers_3d[:, centers_3d[2] == 1.0]
             # already present
@@ -299,9 +305,10 @@ if __name__ == "__main__":
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)))
             else:
-                print("Frame skipped")
-                print(f"obj_count >= min_objects: {obj_count >= min_objects}")
-                print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
+                if args.verbose:
+                    print("Frame skipped")
+                    print(f"obj_count >= min_objects: {obj_count >= min_objects}")
+                    print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
 
             if args.vis:
 
@@ -357,14 +364,7 @@ if __name__ == "__main__":
     print(f"total time: %f sec" % elapased)
 
     print("Saving to hocon")
-    out_hocon_dir = "./hocons"
-    Path(out_hocon_dir).mkdir(parents=True, exist_ok=True)
-
-    suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
-    suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
-    fp = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}.conf"
-
-    save_to_hocon(fp, data_entries, objects_counts_map, vars(args))
+    save_to_hocon(save_file_path, data_entries, objects_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
     print(f"all_R_y: {all_R_y}")
