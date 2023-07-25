@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("--min_corners", type=int, default=6)
     parser.add_argument("--min_scenes", type=int, default=0)
     parser.add_argument("--max_scenes", type=int, default=None)
-    parser.add_argument("--ang_tol", type=int, default=2)
+    parser.add_argument("--ang_tol", type=float, default=2.0)
     parser.add_argument("--min_obj", type=int, default=2)
     parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
@@ -69,7 +69,8 @@ if __name__ == "__main__":
     Path(out_hocon_dir).mkdir(parents=True, exist_ok=True)
     suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
     suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
-    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}_ang={ang_tol}.conf"
+    ang_tol_pint = int(ang_tol) if round(ang_tol) == ang_tol else ang_tol
+    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}_ang={ang_tol_pint}.conf"
     print(f"Will save into: {save_file_path}")
 
     scenes = get_scene_ids_gts(args.data_root)
