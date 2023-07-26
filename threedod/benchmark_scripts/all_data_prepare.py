@@ -15,6 +15,7 @@ from utils.tenFpsDataLoader import TenFpsDataLoader, extract_gt
 dc = ARKitDatasetConfig()
 from pathlib import Path
 from pyquaternion import Quaternion
+import traceback
 
 
 def get_scene_ids_gts(data_root):
@@ -92,10 +93,15 @@ if __name__ == "__main__":
     start_time = time.time()
     for scene_index, (scene_id, gt_path) in enumerate(scenes):
 
-        skipped, boxes_corners, centers_3d, sizes, labels, uids = extract_gt(gt_path)
-        if skipped:
-            print(f"scene {scene_id} skipped")
-            continue
+        try:
+            skipped, boxes_corners, centers_3d, sizes, labels, uids = extract_gt(gt_path)
+            if skipped:
+                print(f"scene {scene_id} skipped")
+                continue
+        except:
+            print("exception caught (see below), skipping the scene")
+            traceback.print_exc()
+            print("exception caught (see above), skipping the scene")
 
         objects = boxes_corners.shape[0]
         if objects < 2:
