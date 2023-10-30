@@ -28,9 +28,11 @@ def save_to_hocon(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
 
 def append_entry(entries_list,
+                 file_name,
                  corners_counts,
                  x_i,
                  X_i,
+                 boxes_2d,
                  K,
                  R_cs_l,
                  t_cs_l,
@@ -72,7 +74,7 @@ def append_entry(entries_list,
     Returns:
     """
 
-
+    boxes_2d = boxes_2d.tolist()
     x_i = x_i.tolist()
     X_i = X_i.tolist()
     X_i_up_down = X_i_up_down.tolist()
@@ -80,6 +82,8 @@ def append_entry(entries_list,
     two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
 
     p3p_map = {"x_i": x_i,
+               "boxes_2d": boxes_2d,
+               "file_name": file_name,
                "corners_counts": corners_counts,
                # east, north-east, north, etc.. (x0, x1), (y0, y1)
                "x_i_corners_mps": two_d_cmcs,
