@@ -336,9 +336,6 @@ class TenFpsDataLoader(object):
                     frame_pose = np.array(self.poses[str(my_key)])
         frame["pose"] = copy.deepcopy(frame_pose)
 
-        im_height_scale = np.float(depth_height) / im_height
-        im_width_scale = np.float(depth_width) / im_width
-
         if depth_height != im_height:
             frame["image"] = np.zeros([depth_height, depth_width, 3])  # 288, 384, 3
             frame["image"][48 : 48 + 192, 64 : 64 + 256, :] = cv2.imread(image_path)
