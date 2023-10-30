@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import utils.box_utils as box_utils
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
 from common.fitting import fit_min_area_rect
-from data_utlls import append_entry, save_to_hocon
+from data_utils import append_entry, save
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
 from utils.tenFpsDataLoader import TenFpsDataLoader, extract_gt
@@ -18,6 +18,9 @@ dc = ARKitDatasetConfig()
 from pathlib import Path
 from pyquaternion import Quaternion
 import traceback
+
+
+default_orientation = Quaternion._from_matrix(np.eye(3)).elements.tolist()
 
 
 def visualize(frame,
@@ -39,52 +42,51 @@ def visualize(frame,
     # 2D bbox
     for b_i in range(len(boxes_2d)):
         for v_i in range(3):
-            ax.plot(boxes_2d[b_i][v_i:v_i+2][:, 0], boxes_2d[b_i][v_i:v_i+2][:, 1], "y-.", linewidth="5")
-        ax.plot(boxes_2d[b_i][[0, 3]][:, 0], boxes_2d[b_i][[0, 3]][:, 1], "y-.", linewidth="5")
+            ax.plot(boxes_2d[b_i][v_i:v_i+2][:, 0], boxes_2d[b_i][v_i:v_i+2][:, 1], "y-.", linewidth=2)
+        ax.plot(boxes_2d[b_i][[0, 3]][:, 0], boxes_2d[b_i][[0, 3]][:, 1], "y-.", linewidth=2)
 
     color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
     for b_i in range(9):
         colr = color[b_i % 9]
         # point clouds per objects
         proj_to_use = projections[:, mask_pts_in_box[:, b_i]]
-        fmt = f"{colr}x"
-        # print(f"fmt: {fmt}")
-        ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=4)
+        fmt = f"{colr}o"
+        ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=2)
 
         centers_display = centers_proj_in_2d[:, b_i: b_i + 1]
         centers_display = centers_display[:, centers_display[2] == 1.0]
-        ax.plot(centers_display[0], centers_display[1], f"{colr}o", markersize="20")
+        ax.plot(centers_display[0], centers_display[1], f"{colr}^", markersize="9")
 
         one_box = boxes_crns[b_i].T
         crns_display = one_box[:, one_box[2] == 1.0]
         # 3D box vertices
-        ax.plot(crns_display[0], crns_display[1], fmt, markersize="35")
+        ax.plot(crns_display[0], crns_display[1], fmt, markersize="7")
 
         # 3D box frame
+        fmt_bf = f"{colr}-"
         for fr in range(3):
             tt = fr + 1
             if tt < crns_display.shape[1] and fr < crns_display.shape[1]:
-                ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], "b-", markersize="15", linewidth=5)
+                ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], fmt_bf, linewidth=2)
             tt = fr + 4
             if tt < crns_display.shape[1] and fr < crns_display.shape[1]:
-                ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], "b-", markersize="15", linewidth=5)
+                ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], fmt_bf, linewidth=2)
 
             tt = fr + 5
             fr2 = fr + 4
             if tt < crns_display.shape[1] and fr2 < crns_display.shape[1]:
-                ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], "b-", markersize="15",
-                        linewidth=5)
+                ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], fmt_bf, linewidth=2)
 
             tt = fr + 5
             fr2 = fr + 1
             if tt < crns_display.shape[1] and fr2 < crns_display.shape[1]:
-                ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], "b-", markersize="15", linewidth=5)
+                ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], fmt_bf, linewidth=2)
 
         #
         if crns_display.shape[1] >= 4:
-            ax.plot(crns_display[0, [0, 3]], crns_display[1, [0, 3]], "b-", markersize="15", linewidth=5)
+            ax.plot(crns_display[0, [0, 3]], crns_display[1, [0, 3]], fmt_bf, linewidth=2)
         if crns_display.shape[1] >= 8:
-            ax.plot(crns_display[0, [4, 7]], crns_display[1, [4, 7]], "b-", markersize="15", linewidth=5)
+            ax.plot(crns_display[0, [4, 7]], crns_display[1, [4, 7]], fmt_bf, linewidth=2)
 
     np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
     ax.axis("off")
@@ -147,7 +149,8 @@ def main():
     suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
     suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
     ang_tol_pint = int(ang_tol) if ang_tol is not None and round(ang_tol) == ang_tol else ang_tol
-    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}_ang={ang_tol_pint}.conf"
+    ang_infix = f"_ang={ang_tol_pint}" if ang_tol_pint is not None else ""
+    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}"
     print(f"Will save into: {save_file_path}")
 
     scenes = get_scene_ids_gts(args.data_root)
@@ -165,6 +168,8 @@ def main():
     all_R_y = 0
     all_x_hor = 0
     all_z_hor = 0
+
+    savepoint_indices = set([10, 50, 100, 500])
 
     start_time = time.time()
     for scene_index, (scene_id, gt_path) in enumerate(scenes):
@@ -195,7 +200,7 @@ def main():
         )
 
         start_time_scene = time.time()
-        for frame_index in range(57, len(loader)):
+        for frame_index in range(len(loader)):
 
             all_frames += 1
 
@@ -204,7 +209,6 @@ def main():
 
             frame = loader[frame_index]
             image_path = frame["image_path"]
-            image = frame["image"]
             pcd = frame["pcd"]
             pose = frame["pose"]
             rgb = frame["color"]
@@ -313,18 +317,18 @@ def main():
                 mask_ok = vectors_ok(one_box)
                 proj_to_use = projections[:, mask_pts_in_box[:, obj_i]]
                 min_projections = 100
-                corners_count = sum(mask_ok)
+                corners_count = sum(mask_ok).item()
                 if corners_count >= args.min_corners and proj_to_use.shape[1] >= min_projections:
 
-                    pixels_to_fit = projections[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(np.int)
+                    pixels_to_fit = projections[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(int)
                     box = fit_min_area_rect(pixels_to_fit)
                     boxes_2d.append(box)
 
                     corners_counts.append(corners_count)
-                    min_2dx = np.min(proj_to_use[0])
-                    max_2dx = np.max(proj_to_use[0])
-                    min_2dy = np.min(proj_to_use[1])
-                    max_2dy = np.max(proj_to_use[1])
+                    min_2dx = np.min(proj_to_use[0]).item()
+                    max_2dx = np.max(proj_to_use[0]).item()
+                    min_2dy = np.min(proj_to_use[1]).item()
+                    max_2dy = np.max(proj_to_use[1]).item()
 
                     center = centers_3d[obj_i]
                     X_i.append(center)
@@ -359,7 +363,7 @@ def main():
                     # TODO - for gravity: yes, but use box_3d[:, 6] as heading: the clockwise rotation angle
                     # lw unused, h should be dz and therefore box_3d[5]
                     lwhs.append(box_3d[3:6].tolist())
-                    all_orientations.append(Quaternion._from_matrix(np.eye(3)).elements.tolist())
+                    all_orientations.append(default_orientation)
                     # old AND new
                     widths_heights.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
@@ -367,37 +371,40 @@ def main():
             objects_counts_map[obj_count] += 1
 
             if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
-                file_name = f"imgs/{scene_id}/ok/ok_{frame_index}.png"
+                vis_file_path = f"imgs/{scene_id}/ok/ok_{frame_index}.png"
                 append_entry(data_entries,
-                             file_name=file_name,
+                             orig_img_path=image_path,
+                             vis_img_path=vis_file_path,
                              corners_counts=corners_counts,
-                             x_i=np.array(x_i), # np.ndarray(n, 2)
-                             X_i=np.asarray(X_i), # np.ndarray(n, 3)
+                             x_i=np.array(x_i),  # np.ndarray(n, 2)
+                             X_i=np.asarray(X_i),  # np.ndarray(n, 3)
                              boxes_2d=np.array(boxes_2d),
-                             K=K, # np.ndarray(3, 3)
-                             # TODO
-                             R_cs_l=R_gt_q_l, # list[4] : quaternion
-                             t_cs_l=t_gt[:, 0].tolist(), # list[3]: meters
-                             R_ego_l=R_gt_q_l, # list[4] : quaternion
-                             t_ego_l=t_gt[:, 0].tolist(), # list[3]: meters
-                             X_i_up_down=np.array([X_i_up, X_i_down]), # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
-                             # TODO: NOW just pass it in a more convenient way
-                             two_d_cmcs=[np.array(l).T for l in all_2d_corners], # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
-                             names=obj_names, # list[n] types of objects
-                             scene_token=scene_id, # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
-                             lwhs=lwhs, # list[n] of list[3] : length, width, height
-                             orientations=all_orientations, # list[n] of list[4]: quaternion
-                             widths_heights=widths_heights, # list[n] of list[2]
-                             widths_heights_new=widths_heights, # list[n] of list[2]
-                             sample_data_token=frame_index, # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
+                             K=K,  # np.ndarray(3, 3)
+                             R_cs_l=R_gt_q_l,  # list[4] : quaternion
+                             t_cs_l=t_gt[:, 0].tolist(),  # list[3]: meters
+                             R_ego_l=R_gt_q_l,  # list[4] : quaternion
+                             t_ego_l=t_gt[:, 0].tolist(),  # list[3]: meters
+                             X_i_up_down=np.array([X_i_up, X_i_down]),  # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
+                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
+                             names=obj_names,  # list[n] types of objects
+                             scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
+                             lwhs=lwhs,  # list[n] of list[3] : length, width, height
+                             orientations=all_orientations,  # list[n] of list[4]: quaternion
+                             widths_heights=widths_heights,  # list[n] of list[2]
+                             widths_heights_new=widths_heights,  # list[n] of list[2]
+                             sample_data_token=frame_index,  # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)))
             else:
-                file_name = f"imgs/{scene_id}/all/all_{frame_index}.png"
+                vis_file_path = f"imgs/{scene_id}/all/all_{frame_index}.png"
                 if args.verbose:
                     print("Frame skipped")
                     print(f"obj_count >= min_objects: {obj_count >= min_objects}")
                     print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
+
+            if savepoint_indices.__contains__(scene_index + 1) and scene_index + 1 != len(scenes):
+                sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={scene_index + 1}"
+                save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
             if args.vis:
                 visualize(frame,
@@ -407,7 +414,7 @@ def main():
                           centers_proj_in_2d,
                           boxes_crns,
                           scene_id,
-                          file_name)
+                          vis_file_path)
 
         elapased = time.time() - start_time_scene
         print(f"{scene_id}: elapsed time: %f sec" % elapased)
@@ -415,7 +422,7 @@ def main():
     print(f"total time: %f sec" % elapased)
 
     print("Saving to hocon")
-    save_to_hocon(save_file_path, data_entries, objects_counts_map, vars(args))
+    save(save_file_path, data_entries, objects_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
     print(f"all_R_y: {all_R_y}")

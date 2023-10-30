@@ -1,8 +1,9 @@
-from pyhocon import ConfigFactory, HOCONConverter
 import numpy as np
 
+from common.data_parsing import save_to_file
 
-def save_to_hocon(fp, entries, objects_counts_map=None, conf_attribute_map={}):
+
+def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
     at_least_objects_counts_map = {}
     # TODO test with None
@@ -20,15 +21,12 @@ def save_to_hocon(fp, entries, objects_counts_map=None, conf_attribute_map={}):
             'samples_with_at_least_n_objects': at_least_objects_counts_map,
             'config': conf_attribute_map
             }
-
-    conf_tree = ConfigFactory.from_dict(data)
-    with open(fp, "w") as fd:
-        fd.write(HOCONConverter.to_hocon(conf_tree))
-    print(f"data saved to {fp}")
+    save_to_file(fp, data,both=True)
 
 
 def append_entry(entries_list,
-                 file_name,
+                 orig_img_path,
+                 vis_img_path,
                  corners_counts,
                  x_i,
                  X_i,
@@ -83,7 +81,8 @@ def append_entry(entries_list,
 
     p3p_map = {"x_i": x_i,
                "boxes_2d": boxes_2d,
-               "file_name": file_name,
+               "vis_file_path": vis_img_path,
+               "orig_file_path": orig_img_path,
                "corners_counts": corners_counts,
                # east, north-east, north, etc.. (x0, x1), (y0, y1)
                "x_i_corners_mps": two_d_cmcs,
