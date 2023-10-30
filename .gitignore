@@ -4,3 +4,8 @@ venv
 online_prepared_data
 offline_prepared_data
 threedod/sample_data
+.DS_Store
+threedod/benchmark_scripts/hocons
+download
+threedod/benchmark_scripts/data_prepare.out.txt
+threedod/benchmark_scripts/imgs

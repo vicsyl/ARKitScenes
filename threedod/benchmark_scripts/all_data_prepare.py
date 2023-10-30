@@ -330,9 +330,10 @@ if __name__ == "__main__":
                 # Show image.
                 img = frame['image']
                 ax.imshow(img)
+
                 # ax.imshow(data)
-                ax.set_xlim(0, img.shape[0])
-                ax.set_ylim(img.shape[1], 0)
+                ax.set_xlim(0, img.shape[1])
+                ax.set_ylim(img.shape[0], 0)
 
                 # ax.plot(projections[0],
                 #         projections[1],
@@ -343,28 +344,53 @@ if __name__ == "__main__":
                 # TODO - arbitrary number of objects
                 color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
                 for b_i in range(9):
+                    # point clouds per objects
                     proj_to_use = projections[:, mask_pts_in_box[:, b_i]]
                     fmt = f"{color[b_i]}x"
-                    fmt2 = f"{color[b_i]}o"
                     # print(f"fmt: {fmt}")
-
                     ax.plot(proj_to_use[0], proj_to_use[1], fmt, markersize=4)
 
                     centers_display = centers_proj_in_2d[:, b_i: b_i + 1]
                     centers_display = centers_display[:, centers_display[2] == 1.0]
-                    ax.plot(centers_display[0], centers_display[1], fmt2, markersize="20")
+                    ax.plot(centers_display[0], centers_display[1], f"{color[b_i]}o", markersize="20")
 
                     one_box = boxes_crns[b_i].T
                     crns_display = one_box[:, one_box[2] == 1.0]
-                    ax.plot(crns_display[0], crns_display[1], fmt, markersize="15")
+                    # 3D box vertices
+                    ax.plot(crns_display[0], crns_display[1], fmt, markersize="35")
+
+                    for fr in range(3):
+                        tt = fr + 1
+                        if tt < crns_display.shape[1] and fr < crns_display.shape[1]:
+                            ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], "b-", markersize="15", linewidth=5)
+                        tt = fr + 4
+                        if tt < crns_display.shape[1] and fr < crns_display.shape[1]:
+                            ax.plot(crns_display[0, [fr, tt]], crns_display[1, [fr, tt]], "b-", markersize="15", linewidth=5)
+
+                        tt = fr + 5
+                        fr2 = fr + 4
+                        if tt < crns_display.shape[1] and fr2 < crns_display.shape[1]:
+                            ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], "b-", markersize="15",
+                                    linewidth=5)
+
+                        tt = fr + 5
+                        fr2 = fr + 1
+                        if tt < crns_display.shape[1] and fr2 < crns_display.shape[1]:
+                            ax.plot(crns_display[0, [fr2, tt]], crns_display[1, [fr2, tt]], "b-", markersize="15", linewidth=5)
+
+                    #
+                    if crns_display.shape[1] >= 4:
+                        ax.plot(crns_display[0, [0, 3]], crns_display[1, [0, 3]], "b-", markersize="15", linewidth=5)
+                    if crns_display.shape[1] >= 8:
+                        ax.plot(crns_display[0, [4, 7]], crns_display[1, [4, 7]], "b-", markersize="15", linewidth=5)
 
                 np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
                 ax.axis("off")
                 Path(f"imgs/{scene_id}").mkdir(parents=True, exist_ok=True)
                 if objects_ok:
-                    plt.savefig(f"imgs/{scene_id}/ok_{frame_index}.png")
+                    plt.savefig(f"imgs/{scene_id}/ok_{frame_index}.png", bbox_inches='tight')
                 else:
-                    plt.savefig(f"imgs/{scene_id}/all_{frame_index}.png")
+                    plt.savefig(f"imgs/{scene_id}/all_{frame_index}.png", bbox_inches='tight')
 
         elapased = time.time() - start_time_scene
         print(f"{scene_id}: elapsed time: %f sec" % elapased)
