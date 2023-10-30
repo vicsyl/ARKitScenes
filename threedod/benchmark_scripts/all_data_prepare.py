@@ -46,7 +46,8 @@ def visualize(frame,
         ax.plot(boxes_2d[b_i][[0, 3]][:, 0], boxes_2d[b_i][[0, 3]][:, 1], "y-.", linewidth=2)
 
     color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
-    for b_i in range(9):
+    print(f"size: {mask_pts_in_box.shape[1]}")
+    for b_i in range(mask_pts_in_box.shape[1]):
         colr = color[b_i % 9]
         # point clouds per objects
         proj_to_use = projections[:, mask_pts_in_box[:, b_i]]
@@ -436,7 +437,7 @@ def main():
 # add the fitting to the object
 # visualize that ... OK
 # clean up - (quickly) ...
-
+# --min_corners=6 --min_obj=1 --data_root ../../download/3dod/Training --vis --frame_rate 1
 # ignore?? TODO: sky direction: a) try out some visos b) just filter on UP
 
 # continue:
