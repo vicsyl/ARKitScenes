@@ -64,26 +64,26 @@ def get_vps(K, R_gt, t_gt, boxes_2d):
     return centers_2d, pure_R_y_real, chosen_2d_dirs, vp_homo, pure_R_y_gt, dirs_gt_x, dirs_gt_y, dirs_gt_z, vp_homo_gt
 
 
-def permute_me_R_t(perm, r, t):
-    return perm @ r @ np.linalg.inv(perm), perm @ t
-
-
-def permute_me_column_vectors(perm, matrix, line_vectors):
-    raise NotImplementedError
-
-
-def permute_me_row_vectors(perm, matrix, row_vectors):
-    line_vectors_ret = None
-    matrix_ret = None
-    if row_vectors is not None:
-        assert row_vectors.shape[1] == 3
-        line_vectors_ret = (perm @ row_vectors.T).T
-        assert line_vectors_ret.shape[1] == 3
-    if matrix is not None:
-        matrix_ret = perm @ matrix @ np.linalg.inv(perm)
-    return matrix_ret, line_vectors_ret
-
-
+# def permute_me_R_t(perm, r, t):
+#     return perm @ r @ np.linalg.inv(perm), perm @ t
+#
+#
+# def permute_me_column_vectors(perm, matrix, line_vectors):
+#     raise NotImplementedError
+#
+#
+# def permute_me_row_vectors(perm, matrix, row_vectors):
+#     line_vectors_ret = None
+#     matrix_ret = None
+#     if row_vectors is not None:
+#         assert row_vectors.shape[1] == 3
+#         line_vectors_ret = (perm @ row_vectors.T).T
+#         assert line_vectors_ret.shape[1] == 3
+#     if matrix is not None:
+#         matrix_ret = perm @ matrix @ np.linalg.inv(perm)
+#     return matrix_ret, line_vectors_ret
+#
+#
 def visualize(frame,
               boxes_2d,
               projections,
@@ -110,18 +110,16 @@ def visualize(frame,
     pose = frame["pose"]
     R_gt, t_gt = R_t_from_frame_pose(pose)
 
-    # ARKIT permute
-    R_gt_permuted, t_gt_permuted = permute_me_R_t(ARKIT_PERMUTE, R_gt, t_gt)
-    _, pcd_permuted = permute_me_row_vectors(ARKIT_PERMUTE, None, pcd)
+    # # ARKIT permute
+    # R_gt_permuted, t_gt_permuted = permute_me_R_t(ARKIT_PERMUTE, R_gt, t_gt)
+    # _, pcd_permuted = permute_me_row_vectors(ARKIT_PERMUTE, None, pcd)
 
     # test projections (project_from_frame_R_t vs. project_from_frame)
     projections_test = project_from_frame_R_t(K, R_gt, t_gt, pcd)
     assert np.allclose(projections, projections_test)
 
-    # CONTINUE: COMMIT!!!
-
-    projections_test_perm = project_from_frame_R_t(K, R_gt_permuted, t_gt_permuted, pcd_permuted)
-    assert np.allclose(projections, projections_test_perm)
+    # projections_test_perm = project_from_frame_R_t(K, R_gt_permuted, t_gt_permuted, pcd_permuted)
+    # assert np.allclose(projections, projections_test_perm)
 
     # Show image.
     _, ax = plt.subplots(1, 1, figsize=(9, 16))
@@ -343,8 +341,8 @@ def main():
         )
 
         start_time_scene = time.time()
-        # for frame_index in range(len(loader)):
-        for frame_index in range(338, 339):
+        for frame_index in range(len(loader)):
+        # for frame_index in range(338, 339):
 
             all_frames += 1
 
@@ -373,14 +371,32 @@ def main():
 
             # projections = K @ (R @ pcd.T + t_gt)
             K = frame["intrinsics"]
+            R_gt_old, t_gt = R_t_from_frame_pose(pose)
             projections = project_from_frame(K, pose, pcd).T
+            projections_2 = project_from_frame_R_t(K, R_gt_old, t_gt, pcd)
+            assert np.allclose(projections, projections_2)
 
-            R_gt, t_gt = R_t_from_frame_pose(pose)
+            def change_x_3d(x_3d):
+                assert x_3d.shape[1] == 3
+                R_x_m_half_pi = np.array([
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, -1.0, 0.0],
+                ])
+                return (R_x_m_half_pi @ x_3d.T).T
 
-            # test
-            # projections2 = K @ (R_gt @ pcd.T + t_gt)
-            # projections2 = projections2 / projections2[2]
-            # assert np.all(projections2 == projections)
+            def change_r(r_l):
+                R_x_half_pi = np.array([
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, -1.0],
+                    [0.0, 1.0, 0.0],
+                ])
+                return r_l @ R_x_half_pi
+
+            R_gt = change_r(R_gt_old)
+            pcd = change_x_3d(pcd)
+            projections_3 = project_from_frame_R_t(K, R_gt, t_gt, pcd)
+            assert np.allclose(projections, projections_3)
 
             boxes_crns = project_from_frame(K, pose, boxes_corners.reshape(-1, 3))
             boxes_crns = boxes_crns.reshape(-1, 8, 3)
@@ -439,7 +455,7 @@ def main():
             # centers_2d_data = centers_3d[:, centers_3d[2] == 1.0]
             # already present
             # K = frame["intrinsics"]
-            R_gt_q_l = Quaternion._from_matrix(R_gt).elements.tolist()
+            R_gt_q_l = Quaternion._from_matrix(R_gt_old).elements.tolist()
             boxes_2d = []
             x_i = []
             X_i = []

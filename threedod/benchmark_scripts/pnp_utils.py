@@ -59,6 +59,7 @@ def unproject_k_r_t(x_i, K, R_gt, t_gt):
 
 # TODO docstring
 def project_from_frame_R_t(K, R_gt, t_gt, row_points):
+    assert row_points.shape[1] == 3
     projections = K @ (R_gt @ row_points.T + t_gt)
     projections = normalize_projections(projections)
     return projections
