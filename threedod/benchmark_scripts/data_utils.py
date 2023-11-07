@@ -2,7 +2,6 @@ import numpy as np
 
 from common.data_parsing import save_to_file
 
-
 def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
     at_least_objects_counts_map = {}
@@ -45,7 +44,8 @@ def append_entry(entries_list,
                  widths_heights,
                  widths_heights_new,
                  sample_data_token,
-                 both_2D_3D):
+                 both_2D_3D,
+                 extra_map={}):
     """
     Args:
         entries_list:
@@ -79,7 +79,7 @@ def append_entry(entries_list,
     K = K.tolist()
     two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
 
-    p3p_map = {"x_i": x_i,
+    entry_map = {"x_i": x_i,
                "boxes_2d": boxes_2d,
                "vis_file_path": vis_img_path,
                "orig_file_path": orig_img_path,
@@ -102,4 +102,8 @@ def append_entry(entries_list,
                "scene": scene_token,
                "sample_data": sample_data_token,
                "instances": both_2D_3D}
-    entries_list.append(p3p_map)
+
+    for k, v in extra_map.items():
+        entry_map[k] = v
+
+    entries_list.append(entry_map)
