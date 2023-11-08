@@ -11,6 +11,7 @@ import numpy as np
 import utils.box_utils as box_utils
 from common.common_transforms import evaluate_pose
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
+from common.data_parsing import parse
 from common.fitting import fit_min_area_rect
 from common.vanishing_point import get_directions, get_vp, project_from_frame_R_t, unproject_center_r_t, \
     get_main_directions, get_vps
@@ -268,6 +269,7 @@ def main():
     parser.add_argument("--min_obj", type=int, default=2)
     parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
+
     print(f"Args:\{args}")
 
     ang_tol = args.ang_tol
@@ -282,26 +284,49 @@ def main():
     save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}"
     print(f"Will save into: {save_file_path}")
 
+    objects_counts_map = defaultdict(int)
+    data_entries = []
+
+    import glob
+    import re
+    paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*")
+    argmax_last_scene = 0
+    max = -1
+    for i, path in enumerate(paths):
+        assert min_objects == 2
+        result = re.search(r".*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt", path)
+        count = int(result.group(1))
+        if count > max:
+            argmax_last_scene = i
+            max = count
+    if argmax_last_scene is not None:
+        print(f"Will cache from {paths[argmax_last_scene]}")
+        config = parse(paths[argmax_last_scene])
+        data_entries = list(config['metropolis_data'])
+        # TODO objects_counts_map
+
     scenes = get_scene_ids_gts(args.data_root)
-    if args.min_scenes is not None:
-        scenes = scenes[:args.max_scenes]
-    scenes = scenes[args.min_scenes:]
+
+    assert args.min_scenes == 0
+    assert args.max_scenes is None
+    # if args.min_scenes is not None:
+    #     scenes = scenes[:args.max_scenes]
+    # scenes = scenes[args.min_scenes:]
 
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
 
-    objects_counts_map = defaultdict(int)
-    data_entries = []
     # counts
     all_frames = 0
     all_R_y = 0
     all_x_hor = 0
     all_z_hor = 0
 
-    savepoint_indices = set([10, 20, 50, 100, 500])
-
     start_time = time.time()
-    for scene_index, (scene_id, gt_path) in enumerate(scenes):
+    print(f"argmax_last_scene:{argmax_last_scene}")
+    # DELETE ME
+    argmax_last_scene = 0
+    for scene_index, (scene_id, gt_path) in enumerate(list(scenes)[argmax_last_scene:]):
 
         try:
             skipped, boxes_corners, centers_3d, sizes, labels, uids = extract_gt(gt_path)
@@ -329,8 +354,8 @@ def main():
         )
 
         start_time_scene = time.time()
-        # for frame_index in range(len(loader)):
-        for frame_index in range(338, 345):
+        for frame_index in range(len(loader)):
+        # for frame_index in range(338, 345):
 
             all_frames += 1
 
@@ -643,7 +668,7 @@ def main():
         elapased = time.time() - start_time_scene
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
 
-        if savepoint_indices.__contains__(scene_index + 1) and scene_index + 1 != len(scenes):
+        if (scene_index + 1) % 3 == 0 and scene_index + 1 != len(scenes):
             sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={scene_index + 1}"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
@@ -651,6 +676,7 @@ def main():
     print(f"total time: %f sec" % elapased)
 
     print("Saving to hocon")
+    # ars(args) OK
     save(save_file_path, data_entries, objects_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
