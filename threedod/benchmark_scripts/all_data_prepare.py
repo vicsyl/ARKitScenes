@@ -651,6 +651,7 @@ def main():
             # CONTINUE: monitor the return value
             # CONTINUE: caching... ?
 
+            print(f"frame_index: {frame_index + 1}/{range(len(loader))}")
             if args.vis:
                 print(f"R:\n{R_gt}")
                 rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt, t_gt)
