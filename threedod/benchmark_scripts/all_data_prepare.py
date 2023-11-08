@@ -299,7 +299,7 @@ def main():
         if count > max:
             argmax_last_scene = i
             max = count
-    if argmax_last_scene is not None:
+    if argmax_last_scene != 0:
         print(f"Will cache from {paths[argmax_last_scene]}")
         config = parse(paths[argmax_last_scene])
         data_entries = list(config['metropolis_data'])
