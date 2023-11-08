@@ -1,3 +1,4 @@
+import itertools
 import argparse
 import math
 import os
@@ -29,7 +30,7 @@ ARKIT_PERMUTE = np.array([
 
 
 class DataPrepareConf:
-    visualize_main_directions = True
+    visualize_main_directions = False
     visualize_vanishing_point = True
     visualize_rest = False
 
@@ -54,14 +55,34 @@ def get_main_directions(centers_2d, K, R, t):
 
 
 def get_vps(K, R_gt, t_gt, boxes_2d):
-    chosen_2d_dirs, _, centers_2d = get_directions(np.array(boxes_2d))
-    pure_R_y_real, vp_homo = get_vp(chosen_2d_dirs, centers_2d)
 
-    # trivial case: R = np.eye(3), t = np.zeros_like(t_gt)
-    dirs_gt_x, dirs_gt_y, dirs_gt_z = get_main_directions(centers_2d, K, R_gt, t_gt)
+    # TODO - is this necessary?
+    boxes_2d = np.array(boxes_2d)
+    all_chosen_2d_dirs, all_heights, all_centers_2d = get_directions(boxes_2d)
 
-    pure_R_y_gt, vp_homo_gt = get_vp(dirs_gt_y, centers_2d)
-    return centers_2d, pure_R_y_real, chosen_2d_dirs, vp_homo, pure_R_y_gt, dirs_gt_x, dirs_gt_y, dirs_gt_z, vp_homo_gt
+    _, all_dirs_gt_ys, _ = get_main_directions(all_centers_2d, K, R_gt, t_gt)
+
+    pure_R_y_reals = []
+    vp_homo_reals = []
+    pure_R_y_gts = []
+    vp_homo_gts = []
+    centers_2d_used_vps = []
+
+    for comb in itertools.combinations(range(boxes_2d.shape[0]), 2):
+
+        centers_2d_used = all_centers_2d[list(comb)]
+        centers_2d_used_vps.append(centers_2d_used)
+        pure_R_y_real, vp_homo_real = get_vp(all_chosen_2d_dirs, centers_2d_used)
+        pure_R_y_reals.append(pure_R_y_real)
+        vp_homo_reals.append(vp_homo_real.tolist())
+
+        _, dirs_gt_y, _ = get_main_directions(centers_2d_used, K, R_gt, t_gt)
+        pure_R_y_gt, vp_homo_gt = get_vp(dirs_gt_y, centers_2d_used)
+        pure_R_y_gts.append(pure_R_y_gt)
+        vp_homo_gts.append(vp_homo_gt.tolist())
+
+    return all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
+           centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts
 
 
 # def permute_me_R_t(perm, r, t):
@@ -149,39 +170,54 @@ def visualize(frame,
 
     if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 1:
 
-        # TODO iterate through all tuples?
-        boxes_2d = boxes_2d[:2]
+        # # TODO iterate through all tuples?
+        # if boxes_2d.shape[0] > 2:
+        #     print("boxes_2d.shape[0] > 2 (vanishing points)")
+        # boxes_2d = boxes_2d[:2]
 
-        # TODO centers-> that won't work
-        centers_2d, pure_R_y_real, chosen_2d_dirs, vp_homo, pure_R_y_gt, dirs_gt_x, dirs_gt_y, dirs_gt_z, vp_homo_gt = get_vps(K,
-                                                                                                       R_gt,
-                                                                                                       t_gt,
-                                                                                                       boxes_2d)
-        # boxes_2d
+        #         centers_2d, \
+        #         pure_R_y_real, \
+        #         chosen_2d_dirs, \
+        #         vp_homo, \
+        #         pure_R_y_gt, \
+        #         dirs_gt_x, \
+        #         dirs_gt_y, \
+        #         dirs_gt_z, \
+        #         vp_homo_gt =
+
+        all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
+               centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt, t_gt, boxes_2d)
+
+        # boxes_2d - all directions
         for i in range(2):
             # [sample, axis]
             dir = boxes_2d[:, i] - boxes_2d[:, i + 1]
-            vis_directions_from_boxes(dir, centers_2d, "k-", linewidth=6)
+            vis_directions_from_boxes(dir, all_centers_2d, "k-", linewidth=6)
 
-        # centers, chosen dirs
-        ax.plot(centers_2d[:, 0], centers_2d[:, 1], "rx", markersize=20, markeredgewidth=2)
-        vis_directions_from_boxes(chosen_2d_dirs, centers_2d, "r-", linewidth=4)
+        # centers
+        ax.plot(all_centers_2d[:, 0], all_centers_2d[:, 1], "rx", markersize=20, markeredgewidth=2)
 
-        if pure_R_y_real:
-            print("demo vp real skipped, pure r_y")
-        else:
-            for i in range(2):
-                ax.plot([centers_2d[i, 0], vp_homo[0]], [centers_2d[i, 1], vp_homo[1]], "r-", linewidth=6)
+        # chosen dirs
+        vis_directions_from_boxes(all_chosen_2d_dirs, all_centers_2d, "r-", linewidth=4)
 
         # dirs_gt
-        vis_directions_from_boxes(dirs_gt_x, centers_2d, "y-.", linewidth=4)
-        vis_directions_from_boxes(dirs_gt_y, centers_2d, "m-.", linewidth=4)
-        vis_directions_from_boxes(dirs_gt_z, centers_2d, "k-.", linewidth=4)
-        if pure_R_y_gt:
-            print("demo vp gt skipped, pure r_y")
-        else:
-            for i in range(2):
-                ax.plot([centers_2d[i, 0], vp_homo_gt[0]], [centers_2d[i, 1], vp_homo_gt[1]], "b-", linewidth=1)
+        # vis_directions_from_boxes(dirs_gt_x, centers_2d, "y-.", linewidth=4)
+        vis_directions_from_boxes(all_dirs_gt_ys, all_centers_2d, "m-.", linewidth=4)
+        # vis_directions_from_boxes(dirs_gt_z, centers_2d, "k-.", linewidth=4)
+
+        def viso_vps(pure_R_ys, vp_homos, fmt):
+
+            # in closure: centers_2d_used_vps
+
+            for centers_2d_used_vp, pure_R_y, vp_homo in zip(centers_2d_used_vps, pure_R_ys, vp_homos):
+                if pure_R_y:
+                    print("vp viso skipped, pure r_y")
+                else:
+                    for i in range(2):
+                        ax.plot([centers_2d_used_vp[i, 0], vp_homo[0]], [centers_2d_used_vp[i, 1], vp_homo[1]], fmt, linewidth=6)
+
+        viso_vps(pure_R_y_reals, vp_homo_reals, "r-")
+        viso_vps(pure_R_y_gts, vp_homo_gts, "b-")
 
     if DataPrepareConf.visualize_rest:
         color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
@@ -341,8 +377,8 @@ def main():
         )
 
         start_time_scene = time.time()
-        for frame_index in range(len(loader)):
-        # for frame_index in range(338, 339):
+        # for frame_index in range(len(loader)):
+        for frame_index in range(338, 339):
 
             all_frames += 1
 
@@ -361,6 +397,7 @@ def main():
             # (m, )
             pts_cnt = np.sum(mask_pts_in_box, axis=0)
             mask_box = pts_cnt > 20
+            # only used here: obj_names.append(gt_labels['types'][obj_i])
             gt_labels = {
                 "bboxes": boxes,
                 "bboxes_mask": mask_box,
@@ -372,6 +409,8 @@ def main():
             # projections = K @ (R @ pcd.T + t_gt)
             K = frame["intrinsics"]
             R_gt_old, t_gt = R_t_from_frame_pose(pose)
+
+            # projections are fine !!!
             projections = project_from_frame(K, pose, pcd).T
             projections_2 = project_from_frame_R_t(K, R_gt_old, t_gt, pcd)
             assert np.allclose(projections, projections_2)
@@ -394,14 +433,25 @@ def main():
                 return r_l @ R_x_half_pi
 
             R_gt = change_r(R_gt_old)
-            pcd = change_x_3d(pcd)
-            projections_3 = project_from_frame_R_t(K, R_gt, t_gt, pcd)
+
+            # pcd_new used only here
+            pcd_new = change_x_3d(pcd)
+            projections_3 = project_from_frame_R_t(K, R_gt, t_gt, pcd_new)
             assert np.allclose(projections, projections_3)
 
-            boxes_crns = project_from_frame(K, pose, boxes_corners.reshape(-1, 3))
+            boxes_corners_used = boxes_corners.reshape(-1, 3)
+            boxes_crns = project_from_frame(K, pose, boxes_corners_used)
+
+            # test, if OK, then boxes_crns are fine
+            boxes_corners_used_new = change_x_3d(boxes_corners_used)
+            boxes_crns_new = project_from_frame_R_t(K, R_gt, t_gt, boxes_corners_used_new).T
+            assert np.allclose(boxes_crns_new, boxes_crns)
+
             boxes_crns = boxes_crns.reshape(-1, 8, 3)
+            # this should be fine, too
             centers_proj_in_2d = project_from_frame(K, pose, centers_3d).T
 
+            # now the tests will be against new, rectified R_gt
             def is_close(a, b):
                 if ang_tol is None:
                     return True
@@ -455,17 +505,25 @@ def main():
             # centers_2d_data = centers_3d[:, centers_3d[2] == 1.0]
             # already present
             # K = frame["intrinsics"]
-            R_gt_q_l = Quaternion._from_matrix(R_gt_old).elements.tolist()
-            boxes_2d = []
+            R_gt_q_l_old = Quaternion._from_matrix(R_gt_old).elements.tolist()
+            R_gt_q_l = Quaternion._from_matrix(R_gt).elements.tolist()
+            boxes_2d_newly_added = []
+
+            # this is new -> new 2D bboxes
+            x_i_old = []
             x_i = []
+
             X_i = []
             X_i_up = []
             X_i_down = []
-            all_2d_corners = []
+
+            # apparently not used
+            all_2d_corners_old = []
+
             obj_names = []
             # scene_token = scene_id
             all_orientations = []
-            widths_heights = []
+            widths_heights_old = []
             lwhs = []
             corners_counts = []
             # sample_data_token = frame_index
@@ -480,53 +538,59 @@ def main():
                 corners_count = sum(mask_ok).item()
                 if corners_count >= args.min_corners and proj_to_use.shape[1] >= min_projections:
 
+                    corners_counts.append(corners_count)
+
+                    # new 2D bboxes...
                     pixels_to_fit = projections[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(int)
                     box = fit_min_area_rect(pixels_to_fit)
-                    boxes_2d.append(box)
+                    boxes_2d_newly_added.append(box)
+                    new_center_2d = box.sum(axis=0) / 4
+                    x_i.append(new_center_2d)
 
-                    corners_counts.append(corners_count)
+                    # old 2D bboxes...
                     min_2dx = np.min(proj_to_use[0]).item()
                     max_2dx = np.max(proj_to_use[0]).item()
                     min_2dy = np.min(proj_to_use[1]).item()
                     max_2dy = np.max(proj_to_use[1]).item()
+                    c_x_old = (min_2dx + max_2dx) / 2
+                    c_y_old = (min_2dy + max_2dy) / 2
+                    x_i_old.append([c_x_old, c_y_old])
+                    two_d_corners_old = [
+                        [max_2dx, c_y_old],
+                        [max_2dx, max_2dy],
+                        [c_x_old, max_2dy],
+                        [min_2dx, max_2dy],
+                        [min_2dx, c_y_old],
+                        [min_2dx, min_2dy],
+                        [c_x_old, min_2dy],
+                        [max_2dx, min_2dy],
+                    ]
+                    all_2d_corners_old.append(two_d_corners_old)
+                    widths_heights_old.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
-                    center = centers_3d[obj_i]
-                    X_i.append(center)
 
+                    # 3D
+                    center_3d = centers_3d[obj_i]
+                    X_i.append(center_3d)
                     # boxes3d:  (N, 7) [x, y, z, dx, dy, dz, heading]
                     #             with (x, y, z) is the box center
                     #             (dx, dy, dz) as the box size
                     #             and heading as the clockwise rotation angle
                     box_3d = boxes[obj_i]
-                    assert np.all(box_3d[:3] == center)
+                    assert np.all(box_3d[:3] == center_3d)
+
                     # TODO check
                     half_dimension_up = box_3d[4] / 2
-                    X_i_up.append(center + half_dimension_up)
-                    X_i_down.append(center - half_dimension_up)
+                    X_i_up.append(center_3d + half_dimension_up)
+                    X_i_down.append(center_3d - half_dimension_up)
                     # east, north - east, north, etc..(x0, x1), (y0, y1)
-                    c_x = (min_2dx + max_2dx) / 2
-                    c_y = (min_2dy + max_2dy) / 2
-                    x_i.append([c_x, c_y])
 
-                    two_d_corners = [
-                        [max_2dx, c_y],
-                        [max_2dx, max_2dy],
-                        [c_x, max_2dy],
-                        [min_2dx, max_2dy],
-                        [min_2dx, c_y],
-                        [min_2dx, min_2dy],
-                        [c_x, min_2dy],
-                        [max_2dx, min_2dy],
-                    ]
-                    all_2d_corners.append(two_d_corners)
                     obj_names.append(gt_labels['types'][obj_i])
                     # TODO - for gravity: yes, but use box_3d[:, 6] as heading: the clockwise rotation angle
                     # lw unused, h should be dz and therefore box_3d[5]
                     lwhs.append(box_3d[3:6].tolist())
                     default_orientation = Quaternion._from_matrix(np.eye(3)).elements.tolist()
                     all_orientations.append(default_orientation)
-                    # old AND new
-                    widths_heights.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
             obj_count = len(X_i)
             objects_counts_map[obj_count] += 1
@@ -537,53 +601,85 @@ def main():
             if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
 
                 vis_file_path = f"imgs/{scene_id}/ok/ok_{frame_index}.png"
-                centers_2d, pure_R_y_real, chosen_2d_dirs, vp_homo, pure_R_y_gt, _, dirs_gt, _, vp_homo_gt = get_vps(K,
-                                                                                                               R_gt,
-                                                                                                               t_gt,
-                                                                                                               boxes_2d)
+
+                # centers_2d, \
+                # pure_R_y_real, \
+                # chosen_2d_dirs, \
+                # vp_homo, \
+                # pure_R_y_gt, \
+                # _, \
+                # dirs_gt, \
+                # _, \
+                # vp_homo_gt = get_vps(K, R_gt, t_gt, boxes_2d_newly_added)
+
+                # CONTINUE!!!
+                all_centers_2d, \
+                all_chosen_2d_dirs, \
+                all_heights, \
+                all_dirs_gt_ys, \
+                centers_2d_used_vps, \
+                vp_homo_reals, \
+                pure_R_y_reals, \
+                vp_homo_gts, \
+                pure_R_y_gts = get_vps(K, R_gt, t_gt, boxes_2d_newly_added)
+                # FIXME: REDUNDANCY
+                assert np.allclose(all_centers_2d, x_i)
+
                 extra_map = {
-                    "centers_2d": centers_2d.tolist(),
-                    "pure_R_y_real": pure_R_y_real,
-                    "chosen_2d_dirs": chosen_2d_dirs.tolist(),
-                    "vp_homo": vp_homo.tolist() if vp_homo is not None else None,
-                    "pure_R_y_gt": pure_R_y_gt,
-                    "dirs_gt": dirs_gt.tolist(),
-                    "vp_homo_gt": vp_homo_gt.tolist() if vp_homo_gt is not None else None,
+                    # all
+                    "all_centers_2d": all_centers_2d.tolist(),
+                    "all_chosen_2d_dirs": all_chosen_2d_dirs.tolist(),
+                    "all_dirs_gt_ys": all_dirs_gt_ys.tolist(),
+                    # 2 over n
+                    "pure_R_y_reals": pure_R_y_reals,
+                    "vp_homo_reals": vp_homo_reals if vp_homo_reals is not None else None,
+                    "pure_R_y_gts": pure_R_y_gts,
+                    "vp_homo_gts": vp_homo_gts if vp_homo_gts is not None else None,
+
+                    # old
+                    "R_cs_l": R_gt_q_l_old,
+                    "x_i_old": x_i_old
                 }
 
+                # CHANGES:
+                # R_cs_l (+ _old)
+                # x_i (+ _old)
+                # boxes_2d (newly_added)
+
                 append_entry(data_entries,
+                             # new -> visualization, orig image
                              orig_img_path=image_path,
                              vis_img_path=vis_file_path,
                              corners_counts=corners_counts,
+                             # new
                              x_i=np.array(x_i),  # np.ndarray(n, 2)
                              X_i=np.asarray(X_i),  # np.ndarray(n, 3)
-                             boxes_2d=np.array(boxes_2d),
+                             # new
+                             boxes_2d=np.array(boxes_2d_newly_added),
                              K=K,  # np.ndarray(3, 3)
+                             # new
                              R_cs_l=R_gt_q_l,  # list[4] : quaternion
                              t_cs_l=t_gt[:, 0].tolist(),  # list[3]: meters
+                             # new
                              R_ego_l=R_gt_q_l,  # list[4] : quaternion
                              t_ego_l=t_gt[:, 0].tolist(),  # list[3]: meters
                              X_i_up_down=np.array([X_i_up, X_i_down]),  # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
-                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
+
+                             # Apparently this is not used...
+                             two_d_cmcs=None,  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
+                             # two_d_cmcs=[np.array(l).T for l in all_2d_corners_old],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
+
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
                              lwhs=lwhs,  # list[n] of list[3] : length, width, height
                              orientations=all_orientations,  # list[n] of list[4]: quaternion
-                             widths_heights=widths_heights,  # list[n] of list[2]
-                             widths_heights_new=widths_heights,  # list[n] of list[2]
+                             # TODO test against widths_heights_new
+                             widths_heights=np.hstack((all_heights[:, None], all_heights[:, None])).tolist(),  # list[n] of list[2]
+                             widths_heights_new=widths_heights_old,  # list[n] of list[2]
                              sample_data_token=frame_index,  # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)),
                              extra_map=extra_map)
-
-                # demo_vp = True
-                # if demo_vp:
-                #     chosen_2d_dirs, _, centers_2d = get_directions(np.array(boxes_2d))
-                #     pure_R_y, vp_homo = get_vp(chosen_2d_dirs, centers_2d)
-                #     if pure_R_y:
-                #         print("demo vp skipped, pure r_y")
-                #         centers_2d = None
-                #         chosen_2d_dirs = None
 
             else:
                 vis_file_path = f"imgs/{scene_id}/all/all_{frame_index}.png"
@@ -595,14 +691,12 @@ def main():
             # CONTINUE: monitor the return value
             # CONTINUE: caching... ?
 
-            # CONTINUE: meanwhile just run on what I already have... (should be simple actually -> except for the )
-
             if args.vis:
                 print(f"R:\n{R_gt}")
                 rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt, t_gt)
                 print(f"rot_err:\n{rot_err}")
                 visualize(frame,
-                          np.array(boxes_2d),
+                          np.array(boxes_2d_newly_added),
                           projections,
                           mask_pts_in_box,
                           centers_proj_in_2d,
