@@ -12,7 +12,8 @@ import utils.box_utils as box_utils
 from common.common_transforms import evaluate_pose
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
 from common.fitting import fit_min_area_rect
-from common.vanishing_point import get_directions, get_vp
+from common.vanishing_point import get_directions, get_vp, project_from_frame_R_t, unproject_center_r_t, \
+    get_main_directions, get_vps
 from data_utils import append_entry, save
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
@@ -23,10 +24,25 @@ from pathlib import Path
 from pyquaternion import Quaternion
 import traceback
 
-ARKIT_PERMUTE = np.array([
-     [0., 0., 1.],
-     [1., 0., 0.],
-     [0., 1., 0.]])
+R_x_m_half_pi = np.array([
+    [1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [0.0, -1.0, 0.0],
+])
+
+R_x_half_pi = np.array([
+    [1.0, 0.0, 0.0],
+    [0.0, 0.0, -1.0],
+    [0.0, 1.0, 0.0],
+])
+
+def change_x_3d(x_3d):
+    assert x_3d.shape[1] == 3
+    return (R_x_half_pi @ x_3d.T).T
+
+
+def change_r(r_l):
+    return r_l @ R_x_m_half_pi
 
 
 class DataPrepareConf:
@@ -35,76 +51,6 @@ class DataPrepareConf:
     visualize_rest = False
 
 
-def get_main_directions(centers_2d, K, R, t):
-
-    centers_3d = unproject_k_r_t(centers_2d, K, R, t)
-
-    centers_3d_plus_y = centers_3d + np.array([0.0, 1.0, 0.0])
-    centers_plus_gt_y = project_from_frame_R_t(K, R, t, centers_3d_plus_y).T[:, :2]
-    dirs_gt_y = centers_plus_gt_y - centers_2d
-
-    centers_3d_plus_x = centers_3d + np.array([1.0, 0.0, 0.0])
-    centers_plus_gt_x = project_from_frame_R_t(K, R, t, centers_3d_plus_x).T[:, :2]
-    dirs_gt_x = centers_plus_gt_x - centers_2d
-
-    centers_3d_plus_z = centers_3d + np.array([0.0, 0.0, 1.0])
-    centers_plus_gt_z = project_from_frame_R_t(K, R, t, centers_3d_plus_z).T[:, :2]
-    dirs_gt_z = centers_plus_gt_z - centers_2d
-
-    return dirs_gt_x, dirs_gt_y, dirs_gt_z
-
-
-def get_vps(K, R_gt, t_gt, boxes_2d):
-
-    # TODO - is this necessary?
-    boxes_2d = np.array(boxes_2d)
-    all_chosen_2d_dirs, all_heights, all_centers_2d = get_directions(boxes_2d)
-
-    _, all_dirs_gt_ys, _ = get_main_directions(all_centers_2d, K, R_gt, t_gt)
-
-    pure_R_y_reals = []
-    vp_homo_reals = []
-    pure_R_y_gts = []
-    vp_homo_gts = []
-    centers_2d_used_vps = []
-
-    for comb in itertools.combinations(range(boxes_2d.shape[0]), 2):
-
-        centers_2d_used = all_centers_2d[list(comb)]
-        centers_2d_used_vps.append(centers_2d_used)
-        pure_R_y_real, vp_homo_real = get_vp(all_chosen_2d_dirs, centers_2d_used)
-        pure_R_y_reals.append(pure_R_y_real)
-        vp_homo_reals.append(vp_homo_real.tolist())
-
-        _, dirs_gt_y, _ = get_main_directions(centers_2d_used, K, R_gt, t_gt)
-        pure_R_y_gt, vp_homo_gt = get_vp(dirs_gt_y, centers_2d_used)
-        pure_R_y_gts.append(pure_R_y_gt)
-        vp_homo_gts.append(vp_homo_gt.tolist())
-
-    return all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
-           centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts
-
-
-# def permute_me_R_t(perm, r, t):
-#     return perm @ r @ np.linalg.inv(perm), perm @ t
-#
-#
-# def permute_me_column_vectors(perm, matrix, line_vectors):
-#     raise NotImplementedError
-#
-#
-# def permute_me_row_vectors(perm, matrix, row_vectors):
-#     line_vectors_ret = None
-#     matrix_ret = None
-#     if row_vectors is not None:
-#         assert row_vectors.shape[1] == 3
-#         line_vectors_ret = (perm @ row_vectors.T).T
-#         assert line_vectors_ret.shape[1] == 3
-#     if matrix is not None:
-#         matrix_ret = perm @ matrix @ np.linalg.inv(perm)
-#     return matrix_ret, line_vectors_ret
-#
-#
 def visualize(frame,
               boxes_2d,
               projections,
@@ -127,9 +73,13 @@ def visualize(frame,
             ax.plot(dir_vis1[i, :, 0], dir_vis1[i, :, 1], fmt, linewidth=linewidth)
 
     K = frame["intrinsics"]
-    pcd = frame["pcd"]
+    pcd_old = frame["pcd"]
     pose = frame["pose"]
-    R_gt, t_gt = R_t_from_frame_pose(pose)
+    R_gt_old, t_gt = R_t_from_frame_pose(pose)
+    R_gt = change_r(R_gt_old)
+
+    # pcd_new used only here
+    pcd = change_x_3d(pcd_old)
 
     # # ARKIT permute
     # R_gt_permuted, t_gt_permuted = permute_me_R_t(ARKIT_PERMUTE, R_gt, t_gt)
@@ -163,49 +113,52 @@ def visualize(frame,
         ax.plot(img_center[:, 0:1], img_center[:, 1:2], "rx", markersize=20, markeredgewidth=2)
         vis_directions_from_center(img_center, dirs_gt_x, fmt="r-", linewidth=3)
         vis_directions_from_center(img_center, dirs_gt_y, fmt="g-", linewidth=3)
-        # 3rd coord -> vertical
-        # 3rd coord -> y
-
         vis_directions_from_center(img_center, dirs_gt_z, fmt="b-", linewidth=3)
 
-    if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 1:
-
-        # # TODO iterate through all tuples?
-        # if boxes_2d.shape[0] > 2:
-        #     print("boxes_2d.shape[0] > 2 (vanishing points)")
-        # boxes_2d = boxes_2d[:2]
-
-        #         centers_2d, \
-        #         pure_R_y_real, \
-        #         chosen_2d_dirs, \
-        #         vp_homo, \
-        #         pure_R_y_gt, \
-        #         dirs_gt_x, \
-        #         dirs_gt_y, \
-        #         dirs_gt_z, \
-        #         vp_homo_gt =
+    if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 0:
 
         all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
                centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt, t_gt, boxes_2d)
+
+        # max_line_width ?
+        np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x), "max_line_width": np.inf})
+        title = ""
+        # title = f"boxes: {boxes_2d}"
+        # title += f"2d_bb_centers:\n{all_centers_2d}\n"
+        # title += f"all_heights:\n{all_heights}\n"
+
+        all_chosen_2d_dirs_normed = all_chosen_2d_dirs / np.linalg.norm(all_chosen_2d_dirs, axis=1)[:, None]
+        title += f"detected boxes vertical directions:\n{all_chosen_2d_dirs_normed}\n"
+
+        all_dirs_gt_ys_normed = all_dirs_gt_ys / np.linalg.norm(all_dirs_gt_ys, axis=1)[:, None]
+        title += f"gt projected vertical directions:\n{all_dirs_gt_ys_normed}\n"
+
+        # something like this
+        dir_errors = []
+        for gt, detected in zip(all_dirs_gt_ys_normed, all_chosen_2d_dirs_normed):
+            alpha = np.arccos(gt.T @ detected).item()
+            alpha = alpha * math.pi / 180
+            alpha = min(alpha, 180 - alpha)
+            dir_errors.append(alpha)
+        dir_errors = np.array(dir_errors)
+        title += f"vertical direction errors[deg]:\n{dir_errors}"
+
+        plt.title(title)
 
         # boxes_2d - all directions
         for i in range(2):
             # [sample, axis]
             dir = boxes_2d[:, i] - boxes_2d[:, i + 1]
-            vis_directions_from_boxes(dir, all_centers_2d, "k-", linewidth=6)
+            vis_directions_from_boxes(dir, all_centers_2d, "c-", linewidth=2)
 
         # centers
-        ax.plot(all_centers_2d[:, 0], all_centers_2d[:, 1], "rx", markersize=20, markeredgewidth=2)
+        ax.plot(all_centers_2d[:, 0], all_centers_2d[:, 1], "rx", markersize=10, markeredgewidth=2)
 
         # chosen dirs
-        vis_directions_from_boxes(all_chosen_2d_dirs, all_centers_2d, "r-", linewidth=4)
+        vis_directions_from_boxes(all_chosen_2d_dirs, all_centers_2d, "r-", linewidth=5)
+        vis_directions_from_boxes(all_dirs_gt_ys, all_centers_2d, "b-.", linewidth=3)
 
-        # dirs_gt
-        # vis_directions_from_boxes(dirs_gt_x, centers_2d, "y-.", linewidth=4)
-        vis_directions_from_boxes(all_dirs_gt_ys, all_centers_2d, "m-.", linewidth=4)
-        # vis_directions_from_boxes(dirs_gt_z, centers_2d, "k-.", linewidth=4)
-
-        def viso_vps(pure_R_ys, vp_homos, fmt):
+        def viso_vps(pure_R_ys, vp_homos, fmt, linewidth):
 
             # in closure: centers_2d_used_vps
 
@@ -214,10 +167,10 @@ def visualize(frame,
                     print("vp viso skipped, pure r_y")
                 else:
                     for i in range(2):
-                        ax.plot([centers_2d_used_vp[i, 0], vp_homo[0]], [centers_2d_used_vp[i, 1], vp_homo[1]], fmt, linewidth=6)
+                        ax.plot([centers_2d_used_vp[i, 0], vp_homo[0]], [centers_2d_used_vp[i, 1], vp_homo[1]], fmt, linewidth=linewidth)
 
-        viso_vps(pure_R_y_reals, vp_homo_reals, "r-")
-        viso_vps(pure_R_y_gts, vp_homo_gts, "b-")
+        viso_vps(pure_R_y_reals, vp_homo_reals, "r-", 5)
+        viso_vps(pure_R_y_gts, vp_homo_gts, "b-.", 3)
 
     if DataPrepareConf.visualize_rest:
         color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
@@ -264,7 +217,6 @@ def visualize(frame,
             if crns_display.shape[1] >= 8:
                 ax.plot(crns_display[0, [4, 7]], crns_display[1, [4, 7]], fmt_bf, linewidth=2)
 
-    np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
     ax.axis("off")
     Path(f"imgs/{scene_id}/ok").mkdir(parents=True, exist_ok=True)
     Path(f"imgs/{scene_id}/all").mkdir(parents=True, exist_ok=True)
@@ -378,7 +330,7 @@ def main():
 
         start_time_scene = time.time()
         # for frame_index in range(len(loader)):
-        for frame_index in range(338, 339):
+        for frame_index in range(338, 345):
 
             all_frames += 1
 
@@ -414,23 +366,6 @@ def main():
             projections = project_from_frame(K, pose, pcd).T
             projections_2 = project_from_frame_R_t(K, R_gt_old, t_gt, pcd)
             assert np.allclose(projections, projections_2)
-
-            def change_x_3d(x_3d):
-                assert x_3d.shape[1] == 3
-                R_x_m_half_pi = np.array([
-                    [1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                    [0.0, -1.0, 0.0],
-                ])
-                return (R_x_m_half_pi @ x_3d.T).T
-
-            def change_r(r_l):
-                R_x_half_pi = np.array([
-                    [1.0, 0.0, 0.0],
-                    [0.0, 0.0, -1.0],
-                    [0.0, 1.0, 0.0],
-                ])
-                return r_l @ R_x_half_pi
 
             R_gt = change_r(R_gt_old)
 
