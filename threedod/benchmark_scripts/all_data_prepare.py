@@ -14,7 +14,7 @@ from common.common_transforms import get_deviation_from_axis, get_deviation_from
 from common.data_parsing import parse
 from common.fitting import fit_min_area_rect
 from common.vanishing_point import get_directions, get_vp, project_from_frame_R_t, unproject_center_r_t, \
-    get_main_directions, get_vps, change_r, change_x_3d
+    get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit
 from data_utils import append_entry, save
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
@@ -57,10 +57,10 @@ def visualize(frame,
     pcd_old = frame["pcd"]
     pose = frame["pose"]
     R_gt_old, t_gt = R_t_from_frame_pose(pose)
-    R_gt = change_r(R_gt_old)
+    R_gt = change_r_arkit(R_gt_old)
 
     # pcd_new used only here
-    pcd = change_x_3d(pcd_old)
+    pcd = change_x_3d_arkit(pcd_old)
 
     # # ARKIT permute
     # R_gt_permuted, t_gt_permuted = permute_me_R_t(ARKIT_PERMUTE, R_gt, t_gt)
@@ -367,34 +367,34 @@ def main():
 
             # projections = K @ (R @ pcd.T + t_gt)
             K = frame["intrinsics"]
-            R_gt_old, t_gt = R_t_from_frame_pose(pose)
+            R_gt, t_gt = R_t_from_frame_pose(pose)
 
             # projections are fine !!!
             projections = project_from_frame(K, pose, pcd).T
-            projections_2 = project_from_frame_R_t(K, R_gt_old, t_gt, pcd)
+            projections_2 = project_from_frame_R_t(K, R_gt, t_gt, pcd)
             assert np.allclose(projections, projections_2)
 
-            R_gt = change_r(R_gt_old)
+            R_gt_new = change_r_arkit(R_gt)
 
             # pcd_new used only here
-            pcd_new = change_x_3d(pcd)
-            projections_3 = project_from_frame_R_t(K, R_gt, t_gt, pcd_new)
+            pcd_new = change_x_3d_arkit(pcd)
+            projections_3 = project_from_frame_R_t(K, R_gt_new, t_gt, pcd_new)
             assert np.allclose(projections, projections_3)
 
             boxes_corners_used = boxes_corners.reshape(-1, 3)
             boxes_crns = project_from_frame(K, pose, boxes_corners_used)
 
             # test, if OK, then boxes_crns are fine
-            boxes_corners_used_new = change_x_3d(boxes_corners_used)
-            boxes_crns_new = project_from_frame_R_t(K, R_gt, t_gt, boxes_corners_used_new).T
+            boxes_corners_used_new = change_x_3d_arkit(boxes_corners_used)
+            boxes_crns_new = project_from_frame_R_t(K, R_gt_new, t_gt, boxes_corners_used_new).T
             assert np.allclose(boxes_crns_new, boxes_crns)
 
             boxes_crns = boxes_crns.reshape(-1, 8, 3)
             # this IS NOT FINE
             centers_proj_in_2d = project_from_frame(K, pose, centers_3d).T
 
-            centers_3d_new = change_x_3d(centers_3d)
-            centers_proj_in_2d_new = project_from_frame_R_t(K, R_gt, t_gt, centers_3d_new).T
+            centers_3d_new = change_x_3d_arkit(centers_3d)
+            centers_proj_in_2d_new = project_from_frame_R_t(K, R_gt_new, t_gt, centers_3d_new).T
             assert np.allclose(centers_proj_in_2d, centers_proj_in_2d_new.T)
 
             # now the tests will be against new, rectified R_gt
@@ -404,9 +404,9 @@ def main():
                 else:
                     return math.fabs(a - b) < ang_tol
 
-            R_y_dev = get_deviation_from_axis(R_gt, Y_AXIS)
-            x_hor_dev = get_deviation_from_plane(R_gt, X_AXIS, Y_AXIS)
-            z_hor_dev = get_deviation_from_plane(R_gt, Z_AXIS, Y_AXIS)
+            R_y_dev = get_deviation_from_axis(R_gt_new, Y_AXIS)
+            x_hor_dev = get_deviation_from_plane(R_gt_new, X_AXIS, Y_AXIS)
+            z_hor_dev = get_deviation_from_plane(R_gt_new, Z_AXIS, Y_AXIS)
             if args.verbose:
                 print(f"R_y_dev: {R_y_dev} ", end="")
                 print(f"x_hor_dev: {x_hor_dev} ", end="")
@@ -451,9 +451,9 @@ def main():
             # centers_2d_data = centers_3d[:, centers_3d[2] == 1.0]
             # already present
             # K = frame["intrinsics"]
-            R_gt_q_l_old = Quaternion._from_matrix(R_gt_old).elements.tolist()
             R_gt_q_l = Quaternion._from_matrix(R_gt).elements.tolist()
-            boxes_2d_newly_added = []
+            R_gt_q_l_new = Quaternion._from_matrix(R_gt_new).elements.tolist()
+            boxes_2d = []
 
             # this is new -> new 2D bboxes
             x_i_old = []
@@ -464,8 +464,8 @@ def main():
             X_i_up = []
             X_i_down = []
 
-            # apparently not used
-            all_2d_corners_old = []
+            # FIXME not used ?
+            all_2d_corners = []
 
             obj_names = []
             # scene_token = scene_id
@@ -490,7 +490,7 @@ def main():
                     # new 2D bboxes...
                     pixels_to_fit = projections[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(int)
                     box = fit_min_area_rect(pixels_to_fit)
-                    boxes_2d_newly_added.append(box)
+                    boxes_2d.append(box)
                     new_center_2d = box.sum(axis=0) / 4
                     x_i.append(new_center_2d)
 
@@ -502,7 +502,7 @@ def main():
                     c_x_old = (min_2dx + max_2dx) / 2
                     c_y_old = (min_2dy + max_2dy) / 2
                     x_i_old.append([c_x_old, c_y_old])
-                    two_d_corners_old = [
+                    two_d_corners = [
                         [max_2dx, c_y_old],
                         [max_2dx, max_2dy],
                         [c_x_old, max_2dy],
@@ -512,7 +512,7 @@ def main():
                         [c_x_old, min_2dy],
                         [max_2dx, min_2dy],
                     ]
-                    all_2d_corners_old.append(two_d_corners_old)
+                    all_2d_corners.append(two_d_corners)
                     widths_heights_old.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
                     # 3D
@@ -542,7 +542,7 @@ def main():
                     default_orientation = Quaternion._from_matrix(np.eye(3)).elements.tolist()
                     all_orientations.append(default_orientation)
 
-            obj_count = len(X_i_new)
+            obj_count = len(X_i)
             objects_counts_map[obj_count] += 1
 
             # demo_vp disabled
@@ -571,7 +571,7 @@ def main():
                 vp_homo_reals, \
                 pure_R_y_reals, \
                 vp_homo_gts, \
-                pure_R_y_gts = get_vps(K, R_gt, t_gt, boxes_2d_newly_added)
+                pure_R_y_gts = get_vps(K, R_gt_new, t_gt, boxes_2d)
                 # FIXME: REDUNDANCY
                 assert np.allclose(all_centers_2d, x_i)
 
@@ -587,7 +587,7 @@ def main():
                     "vp_homo_gts": vp_homo_gts if vp_homo_gts is not None else None,
 
                     # old
-                    "R_cs_l": R_gt_q_l_old,
+                    "R_cs_l": R_gt_q_l,
                     "x_i_old": x_i_old,
 
                     # bugfix
@@ -608,7 +608,7 @@ def main():
                              x_i=np.array(x_i),  # np.ndarray(n, 2)
                              X_i=np.asarray(X_i),  # np.ndarray(n, 3)
                              # new (new bboxes)
-                             boxes_2d=np.array(boxes_2d_newly_added),
+                             boxes_2d=np.array(boxes_2d),
                              K=K,  # np.ndarray(3, 3)
                              # new
                              R_cs_l=R_gt_q_l,  # list[4] : quaternion
@@ -617,22 +617,19 @@ def main():
                              R_ego_l=R_gt_q_l,  # list[4] : quaternion
                              t_ego_l=t_gt[:, 0].tolist(),  # list[3]: meters
                              X_i_up_down=np.array([X_i_up, X_i_down]),  # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
-
                              # Apparently this is not used...
-                             two_d_cmcs=None,  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
-                             # two_d_cmcs=[np.array(l).T for l in all_2d_corners_old],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
-
+                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
                              # FIXME: DEBUG!!!!
                              lwhs=lwhs,  # list[n] of list[3] : length, width, height
                              orientations=all_orientations,  # list[n] of list[4]: quaternion
                              # TODO test against widths_heights_new
-                             widths_heights=np.hstack((all_heights[:, None], all_heights[:, None])).tolist(),  # list[n] of list[2]
-                             widths_heights_new=widths_heights_old,  # list[n] of list[2]
+                             widths_heights=widths_heights_old,  # list[n] of list[2]
                              sample_data_token=frame_index,  # (e.g. 'a1LHTHCD_RydavtlH93q8Q-cam-right')
                              # IMHO unused
                              both_2D_3D=list(range(obj_count)),
+                             widths_heights_new=np.hstack((all_heights[:, None], all_heights[:, None])).tolist(),  # list[n] of list[2]
                              extra_map=extra_map)
 
             else:
@@ -647,11 +644,11 @@ def main():
 
             print(f"frame_index: {frame_index + 1}/{range(len(loader))}")
             if args.vis:
-                print(f"R:\n{R_gt}")
-                rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt, t_gt)
+                print(f"R:\n{R_gt_new}")
+                rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt_new, t_gt)
                 print(f"rot_err:\n{rot_err}")
                 visualize(frame,
-                          np.array(boxes_2d_newly_added),
+                          np.array(boxes_2d),
                           projections,
                           mask_pts_in_box,
                           centers_proj_in_2d,
