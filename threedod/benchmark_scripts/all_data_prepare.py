@@ -14,7 +14,7 @@ from common.common_transforms import get_deviation_from_axis, get_deviation_from
 from common.data_parsing import parse
 from common.fitting import fit_min_area_rect
 from common.vanishing_point import get_directions, get_vp, project_from_frame_R_t, unproject_center_r_t, \
-    get_main_directions, get_vps
+    get_main_directions, get_vps, change_r, change_x_3d
 from data_utils import append_entry, save
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
@@ -25,31 +25,11 @@ from pathlib import Path
 from pyquaternion import Quaternion
 import traceback
 
-R_x_m_half_pi = np.array([
-    [1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [0.0, -1.0, 0.0],
-])
-
-R_x_half_pi = np.array([
-    [1.0, 0.0, 0.0],
-    [0.0, 0.0, -1.0],
-    [0.0, 1.0, 0.0],
-])
-
-def change_x_3d(x_3d):
-    assert x_3d.shape[1] == 3
-    return (R_x_half_pi @ x_3d.T).T
-
-
-def change_r(r_l):
-    return r_l @ R_x_m_half_pi
-
 
 class DataPrepareConf:
     visualize_main_directions = False
     visualize_vanishing_point = True
-    visualize_rest = False
+    visualize_rest = True
 
 
 def visualize(frame,
@@ -116,6 +96,7 @@ def visualize(frame,
         vis_directions_from_center(img_center, dirs_gt_y, fmt="g-", linewidth=3)
         vis_directions_from_center(img_center, dirs_gt_z, fmt="b-", linewidth=3)
 
+    title = ""
     if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 0:
 
         all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
@@ -123,10 +104,9 @@ def visualize(frame,
 
         # max_line_width ?
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x), "max_line_width": np.inf})
-        title = ""
-        # title = f"boxes: {boxes_2d}"
-        # title += f"2d_bb_centers:\n{all_centers_2d}\n"
-        # title += f"all_heights:\n{all_heights}\n"
+        title = f"boxes:\n{boxes_2d}\n"
+        title += f"2d_bb_centers:\n{all_centers_2d}\n"
+        title += f"all_heights:\n{all_heights}\n"
 
         all_chosen_2d_dirs_normed = all_chosen_2d_dirs / np.linalg.norm(all_chosen_2d_dirs, axis=1)[:, None]
         title += f"detected boxes vertical directions:\n{all_chosen_2d_dirs_normed}\n"
@@ -142,9 +122,7 @@ def visualize(frame,
             alpha = min(alpha, 180 - alpha)
             dir_errors.append(alpha)
         dir_errors = np.array(dir_errors)
-        title += f"vertical direction errors[deg]:\n{dir_errors}"
-
-        plt.title(title)
+        title += f"vertical direction errors[deg]:\n{dir_errors}\n"
 
         # boxes_2d - all directions
         for i in range(2):
@@ -185,7 +163,10 @@ def visualize(frame,
 
             centers_display = centers_proj_in_2d[:, b_i: b_i + 1]
             centers_display = centers_display[:, centers_display[2] == 1.0]
-            ax.plot(centers_display[0], centers_display[1], f"{colr}^", markersize="9")
+            ax.plot(centers_display[0], centers_display[1], f"{colr}x", markersize="15", markeredgewidth=4)
+
+            if centers_display.shape[1] != 0:
+                title += f"centers_display:\n{centers_display[:2, 0]}\n"
 
             one_box = boxes_crns[b_i].T
             crns_display = one_box[:, one_box[2] == 1.0]
@@ -218,7 +199,8 @@ def visualize(frame,
             if crns_display.shape[1] >= 8:
                 ax.plot(crns_display[0, [4, 7]], crns_display[1, [4, 7]], fmt_bf, linewidth=2)
 
-    ax.axis("off")
+    plt.title(title)
+    # ax.axis("off")
     Path(f"imgs/{scene_id}/ok").mkdir(parents=True, exist_ok=True)
     Path(f"imgs/{scene_id}/all").mkdir(parents=True, exist_ok=True)
     plt.savefig(file_name, bbox_inches='tight')
@@ -355,7 +337,7 @@ def main():
 
         start_time_scene = time.time()
         for frame_index in range(len(loader)):
-        # for frame_index in range(338, 345):
+        # for frame_index in range(338, 339):
 
             all_frames += 1
 
@@ -408,8 +390,12 @@ def main():
             assert np.allclose(boxes_crns_new, boxes_crns)
 
             boxes_crns = boxes_crns.reshape(-1, 8, 3)
-            # this should be fine, too
+            # this IS NOT FINE
             centers_proj_in_2d = project_from_frame(K, pose, centers_3d).T
+
+            centers_3d_new = change_x_3d(centers_3d)
+            centers_proj_in_2d_new = project_from_frame_R_t(K, R_gt, t_gt, centers_3d_new).T
+            assert np.allclose(centers_proj_in_2d, centers_proj_in_2d_new.T)
 
             # now the tests will be against new, rectified R_gt
             def is_close(a, b):
@@ -473,6 +459,7 @@ def main():
             x_i_old = []
             x_i = []
 
+            X_i_new = []
             X_i = []
             X_i_up = []
             X_i_down = []
@@ -528,10 +515,13 @@ def main():
                     all_2d_corners_old.append(two_d_corners_old)
                     widths_heights_old.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
-
                     # 3D
                     center_3d = centers_3d[obj_i]
+                    print(f"object index: {obj_i}")
                     X_i.append(center_3d)
+                    center_3d_new = centers_3d_new[obj_i]
+                    X_i_new.append(center_3d_new)
+
                     # boxes3d:  (N, 7) [x, y, z, dx, dy, dz, heading]
                     #             with (x, y, z) is the box center
                     #             (dx, dy, dz) as the box size
@@ -552,7 +542,7 @@ def main():
                     default_orientation = Quaternion._from_matrix(np.eye(3)).elements.tolist()
                     all_orientations.append(default_orientation)
 
-            obj_count = len(X_i)
+            obj_count = len(X_i_new)
             objects_counts_map[obj_count] += 1
 
             # demo_vp disabled
@@ -598,7 +588,10 @@ def main():
 
                     # old
                     "R_cs_l": R_gt_q_l_old,
-                    "x_i_old": x_i_old
+                    "x_i_old": x_i_old,
+
+                    # bugfix
+                    "X_i_new": np.asarray(X_i_new).tolist(),
                 }
 
                 # CHANGES:
@@ -611,10 +604,10 @@ def main():
                              orig_img_path=image_path,
                              vis_img_path=vis_file_path,
                              corners_counts=corners_counts,
-                             # new
+                             # new (new bboxes)
                              x_i=np.array(x_i),  # np.ndarray(n, 2)
                              X_i=np.asarray(X_i),  # np.ndarray(n, 3)
-                             # new
+                             # new (new bboxes)
                              boxes_2d=np.array(boxes_2d_newly_added),
                              K=K,  # np.ndarray(3, 3)
                              # new
@@ -631,6 +624,7 @@ def main():
 
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
+                             # FIXME: DEBUG!!!!
                              lwhs=lwhs,  # list[n] of list[3] : length, width, height
                              orientations=all_orientations,  # list[n] of list[4]: quaternion
                              # TODO test against widths_heights_new
@@ -664,7 +658,6 @@ def main():
                           boxes_crns,
                           scene_id,
                           vis_file_path)
-
 
         elapased = time.time() - start_time_scene
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
