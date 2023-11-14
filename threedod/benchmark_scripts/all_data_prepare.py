@@ -290,10 +290,9 @@ def main():
     scenes = get_scene_ids_gts(args.data_root)
 
     assert args.min_scenes == 0
-    assert args.max_scenes is None
-    # if args.min_scenes is not None:
-    #     scenes = scenes[:args.max_scenes]
-    # scenes = scenes[args.min_scenes:]
+    if args.max_scenes is not None:
+        scenes = scenes[:args.max_scenes]
+    scenes = scenes[args.min_scenes:]
 
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
