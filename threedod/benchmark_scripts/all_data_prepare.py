@@ -301,6 +301,7 @@ def main():
         print(f"Will cache from {paths[argmax_last_scene]}")
         config = parse(paths[argmax_last_scene])
         data_entries = list(config['metropolis_data'])
+        args.min_scenes = len(data_entries)
         # TODO objects_counts_map
 
     scenes = get_scene_ids_gts(args.data_root)
@@ -420,9 +421,9 @@ def main():
                 else:
                     return math.fabs(a - b) < ang_tol
 
-            R_y_dev = get_deviation_from_axis(R_gt_new, Y_AXIS)
-            x_hor_dev = get_deviation_from_plane(R_gt_new, X_AXIS, Y_AXIS)
-            z_hor_dev = get_deviation_from_plane(R_gt_new, Z_AXIS, Y_AXIS)
+            R_y_dev = get_deviation_from_axis(R_gt, Y_AXIS)
+            x_hor_dev = get_deviation_from_plane(R_gt, X_AXIS, Y_AXIS)
+            z_hor_dev = get_deviation_from_plane(R_gt, Z_AXIS, Y_AXIS)
             if args.verbose:
                 print(f"R_y_dev: {R_y_dev} ", end="")
                 print(f"x_hor_dev: {x_hor_dev} ", end="")
