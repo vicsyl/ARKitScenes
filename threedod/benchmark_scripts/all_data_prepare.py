@@ -277,7 +277,7 @@ def main():
     suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
     ang_tol_pint = int(ang_tol) if ang_tol is not None and round(ang_tol) == ang_tol else ang_tol
     ang_infix = f"_ang={ang_tol_pint}" if ang_tol_pint is not None else ""
-    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}.conf"
+    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}"
     print(f"Will save into: {save_file_path}")
 
     objects_counts_map = defaultdict(int)
@@ -691,7 +691,7 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}.conf"
+            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
     elapased = time.time() - start_time
