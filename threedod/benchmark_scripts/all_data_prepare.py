@@ -285,7 +285,7 @@ def main():
 
     import glob
     import re
-    paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*.conf")
+    paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*_posthocon.txt")
 
     assert args.min_scenes == 0
     argmax_last_scene = -1
@@ -294,7 +294,7 @@ def main():
         print(f"checking path: {path}")
         print(f"r: {'.*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt'}")
         assert min_objects == 2
-        result = re.search(r".*ARKitScenes=obj=2.*sp=(.*).conf", path)
+        result = re.search(r".*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt", path)
         count = int(result.group(1))
         if count > max:
             argmax_last_scene = i
