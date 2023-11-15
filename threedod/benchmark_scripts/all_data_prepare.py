@@ -691,7 +691,7 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={scene_index + 1}.conf"
+            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}.conf"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
     elapased = time.time() - start_time
