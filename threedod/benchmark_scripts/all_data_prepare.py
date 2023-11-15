@@ -289,6 +289,8 @@ def main():
     argmax_last_scene = 0
     max = -1
     for i, path in enumerate(paths):
+        print(f"checking path: {path}")
+        print(f"r: {'.*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt'}")
         assert min_objects == 2
         result = re.search(r".*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt", path)
         count = int(result.group(1))
