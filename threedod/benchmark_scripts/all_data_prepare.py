@@ -285,7 +285,7 @@ def main():
 
     import glob
     import re
-    paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*")
+    paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*_posthocon.txt")
     argmax_last_scene = 0
     max = -1
     for i, path in enumerate(paths):
