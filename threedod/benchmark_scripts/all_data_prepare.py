@@ -613,7 +613,7 @@ def main():
 
                     # old
                     "R_cs_l": R_gt_q_l,
-                    "x_i_new": x_i_new,
+                    "x_i_new": np.asarray(x_i_new).tolist(),
 
                     # bugfix
                     "X_i_new": np.asarray(X_i_new).tolist(),
