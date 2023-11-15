@@ -681,7 +681,8 @@ def main():
         elapased = time.time() - start_time_scene
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
 
-        if (scene_index + 1) % 5 == 0 and scene_index + 1 != len(scenes):
+        every_other_cache = 2
+        if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
             sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={scene_index + 1}"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
