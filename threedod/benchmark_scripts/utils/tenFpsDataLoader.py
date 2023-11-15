@@ -323,7 +323,7 @@ class TenFpsDataLoader(object):
             print(depth_image_path, "does not exist")
         frame["depth"] = cv2.imread(depth_image_path, -1)
         frame["image"] = cv2.imread(image_path)
-        if frame["image"] is not None:
+        if frame["image"] is None:
             print(f"FRAME will be skipped: image_path: {image_path}")
             return None
         frame["image_path"] = image_path
