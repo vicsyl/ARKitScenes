@@ -286,7 +286,7 @@ def main():
     import glob
     import re
     paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*_posthocon.txt")
-    argmax_last_scene = 0
+    argmax_last_scene = -1
     max = -1
     for i, path in enumerate(paths):
         print(f"checking path: {path}")
@@ -297,7 +297,7 @@ def main():
         if count > max:
             argmax_last_scene = i
             max = count
-    if argmax_last_scene != 0:
+    if argmax_last_scene != -1:
         print(f"Will cache from {paths[argmax_last_scene]}")
         config = parse(paths[argmax_last_scene])
         data_entries = list(config['metropolis_data'])
