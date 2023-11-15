@@ -366,6 +366,9 @@ def main():
                 continue
 
             frame = loader[frame_index]
+            if not frame:
+                print("FRAME SKIPPED")
+                continue
             image_path = frame["image_path"]
             pcd = frame["pcd"]
             pose = frame["pose"]
