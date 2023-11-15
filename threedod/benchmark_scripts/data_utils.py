@@ -2,6 +2,7 @@ import numpy as np
 
 from common.data_parsing import save_to_file
 
+
 def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
     at_least_objects_counts_map = {}
