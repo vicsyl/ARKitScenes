@@ -303,7 +303,10 @@ def main():
         data_entries = list(config['metropolis_data'])
         args.min_scenes = argmax_last_scene
         # TODO objects_counts_map
+    else:
+        argmax_last_scene = 0
 
+    print(f"argmax_last_scene:{argmax_last_scene}")
     scenes = get_scene_ids_gts(args.data_root)
 
     if args.max_scenes is not None:
@@ -321,8 +324,8 @@ def main():
 
     start_time = time.time()
     print(f"argmax_last_scene:{argmax_last_scene}")
-    # DELETE ME
-    argmax_last_scene = 0
+    # # DELETE ME
+    # argmax_last_scene = 0
     for scene_index, (scene_id, gt_path) in enumerate(list(scenes)[argmax_last_scene:]):
 
         try:
