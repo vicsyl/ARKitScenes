@@ -286,6 +286,8 @@ def main():
     import glob
     import re
     paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*.conf")
+
+    assert args.min_scenes == 0
     argmax_last_scene = -1
     max = -1
     for i, path in enumerate(paths):
@@ -301,12 +303,9 @@ def main():
         print(f"Will cache from {paths[argmax_last_scene]}")
         config = parse(paths[argmax_last_scene])
         data_entries = list(config['metropolis_data'])
-        args.min_scenes = argmax_last_scene
+        args.min_scenes = max
         # TODO objects_counts_map
-    else:
-        argmax_last_scene = 0
 
-    print(f"argmax_last_scene:{argmax_last_scene}")
     scenes = get_scene_ids_gts(args.data_root)
 
     if args.max_scenes is not None:
