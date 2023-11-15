@@ -301,7 +301,7 @@ def main():
         print(f"Will cache from {paths[argmax_last_scene]}")
         config = parse(paths[argmax_last_scene])
         data_entries = list(config['metropolis_data'])
-        args.min_scenes = len(argmax_last_scene)
+        args.min_scenes = argmax_last_scene
         # TODO objects_counts_map
 
     scenes = get_scene_ids_gts(args.data_root)
