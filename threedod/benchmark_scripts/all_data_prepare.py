@@ -473,8 +473,8 @@ def main():
             boxes_2d = []
 
             # this is new -> new 2D bboxes
-            x_i_old = []
             x_i = []
+            x_i_new = []
 
             X_i_new = []
             X_i = []
@@ -510,7 +510,7 @@ def main():
                     box = fit_min_area_rect(pixels_to_fit)
                     boxes_2d.append(box)
                     new_center_2d = box.sum(axis=0) / 4
-                    x_i.append(new_center_2d)
+                    x_i_new.append(new_center_2d)
 
                     # old 2D bboxes...
                     min_2dx = np.min(proj_to_use[0]).item()
@@ -519,7 +519,7 @@ def main():
                     max_2dy = np.max(proj_to_use[1]).item()
                     c_x_old = (min_2dx + max_2dx) / 2
                     c_y_old = (min_2dy + max_2dy) / 2
-                    x_i_old.append([c_x_old, c_y_old])
+                    x_i.append([c_x_old, c_y_old])
                     two_d_corners = [
                         [max_2dx, c_y_old],
                         [max_2dx, max_2dy],
@@ -612,7 +612,7 @@ def main():
 
                     # old
                     "R_cs_l": R_gt_q_l,
-                    "x_i_old": x_i_old,
+                    "x_i_new": x_i_new,
 
                     # bugfix
                     "X_i_new": np.asarray(X_i_new).tolist(),
