@@ -320,6 +320,7 @@ def main():
     print(f"Will save into: {base_file_path}")
 
     data_entries, objects_counts_map = get_cached_data(base_file_path, read_posthocon=True, out_log=True)
+    cache_length = len(data_entries)
 
     # first min/max, then cached data_entries
     scenes = get_scene_ids_gts(args.data_root)
@@ -664,7 +665,7 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}"
+            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}_sp={cache_length + scene_index}"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
     elapased = time.time() - start_time
