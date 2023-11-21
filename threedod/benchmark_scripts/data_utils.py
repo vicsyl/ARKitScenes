@@ -6,7 +6,6 @@ from common.data_parsing import save_to_file
 def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
 
     at_least_objects_counts_map = {}
-    # TODO test with None
     if objects_counts_map is not None:
         at_least_n_sum = 0
         for obj, count in objects_counts_map.items():

@@ -9,4 +9,5 @@ threedod/benchmark_scripts/hocons
 download
 threedod/benchmark_scripts/data_prepare.out.txt
 threedod/benchmark_scripts/imgs
+threedod/benchmark_scripts/ignore
 common

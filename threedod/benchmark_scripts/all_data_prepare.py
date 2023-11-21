@@ -1,20 +1,19 @@
-import itertools
 import argparse
+import glob
 import math
 import os
+import re
 import time
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 import utils.box_utils as box_utils
 from common.common_transforms import evaluate_pose, project_from_frame_R_t
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
 from common.data_parsing import parse
 from common.fitting import fit_min_area_rect
-from common.vanishing_point import get_directions, get_vp, \
-    get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit
+from common.vanishing_point import get_directions, get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit
 from data_utils import append_entry, save
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
@@ -32,6 +31,45 @@ class DataPrepareConf:
     visualize_rest = False
 
 
+def get_cached_data(base_file_path, read_posthocon=True, out_log=False):
+
+    def log(s):
+        if out_log:
+            print(s)
+
+    data_entries = []
+    # TODO objects_counts_map caching
+    objects_counts_map = defaultdict(int)
+    format_suffix = "_posthocon.txt" if read_posthocon else ".conf"
+
+    paths = glob.glob(f"{base_file_path}_sp=*{format_suffix}")
+    log(f"Cached paths: {paths}")
+
+    max_cached_path = None
+    max = -1
+    for path in paths:
+        re_s = f".*ARKitScenes.*sp=(.*)(_posthocon.txt|.conf)"
+        result = re.search(re_s, path)
+        if not result:
+            print(f"checked path: {path} for {re_s}, found nothing!")
+            continue
+        count = int(result.group(1))
+        log(f"checked path: {path} for {re_s}, found count: {count}")
+        if count > max:
+            max_cached_path = path
+            max = count
+
+    if max_cached_path:
+        print(f"Will cache from {max_cached_path}")
+        config = parse(max_cached_path)
+        data_entries = list(config['metropolis_data'])
+        # TODO objects_counts_map
+    else:
+        print("No cache found")
+
+    return data_entries, objects_counts_map
+
+
 def visualize(frame,
               boxes_2d,
               widths_heights_old,
@@ -42,7 +80,6 @@ def visualize(frame,
               boxes_crns,
               scene_id,
               file_name):
-
     def vis_directions_from_center(center, dir_l, fmt, linewidth=2):
         dir_vis = np.vstack((center, center + dir_l))
         ax.plot(dir_vis[:, 0], dir_vis[:, 1], fmt, linewidth=linewidth)
@@ -81,7 +118,7 @@ def visualize(frame,
     # 2D bbox
     for b_i in range(len(boxes_2d)):
         for v_i in range(3):
-            ax.plot(boxes_2d[b_i][v_i:v_i+2][:, 0], boxes_2d[b_i][v_i:v_i+2][:, 1], "y-.", linewidth=2)
+            ax.plot(boxes_2d[b_i][v_i:v_i + 2][:, 0], boxes_2d[b_i][v_i:v_i + 2][:, 1], "y-.", linewidth=2)
         ax.plot(boxes_2d[b_i][[0, 3]][:, 0], boxes_2d[b_i][[0, 3]][:, 1], "y-.", linewidth=2)
 
     def unproject_center_r_t_local(R_gt, t_gt, K_for_center):
@@ -115,7 +152,8 @@ def visualize(frame,
     if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 0:
 
         all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
-               centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt_new, t_gt, boxes_2d)
+        centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt_new, t_gt,
+                                                                                                boxes_2d)
 
         # max_line_width ?
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x), "max_line_width": np.inf})
@@ -160,7 +198,8 @@ def visualize(frame,
                     print("vp viso skipped, pure r_y")
                 else:
                     for i in range(2):
-                        ax.plot([centers_2d_used_vp[i, 0], vp_homo[0]], [centers_2d_used_vp[i, 1], vp_homo[1]], fmt, linewidth=linewidth)
+                        ax.plot([centers_2d_used_vp[i, 0], vp_homo[0]], [centers_2d_used_vp[i, 1], vp_homo[1]], fmt,
+                                linewidth=linewidth)
 
         viso_vps(pure_R_y_reals, vp_homo_reals, "r-", 5)
         viso_vps(pure_R_y_gts, vp_homo_gts, "b-.", 3)
@@ -273,55 +312,21 @@ def main():
     print(f"ang_tol: {ang_tol}")
     out_hocon_dir = "./hocons"
     Path(out_hocon_dir).mkdir(parents=True, exist_ok=True)
-    suffix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
-    suffix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
+    min_max_infix = f"_min={args.min_scenes}" if args.min_scenes != 0 else ""
+    min_max_infix += f"_max={args.max_scenes}" if args.max_scenes is not None else ""
     ang_tol_pint = int(ang_tol) if ang_tol is not None and round(ang_tol) == ang_tol else ang_tol
     ang_infix = f"_ang={ang_tol_pint}" if ang_tol_pint is not None else ""
-    save_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}"
-    print(f"Will save into: {save_file_path}")
+    base_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}"
+    print(f"Will save into: {base_file_path}")
 
-    objects_counts_map = defaultdict(int)
-    data_entries = []
+    data_entries, objects_counts_map = get_cached_data(base_file_path, read_posthocon=True, out_log=True)
 
-    import glob
-    import re
-    posthocon = False
-    if posthocon:
-        paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*_posthocon.txt")
-    else:
-        paths = glob.glob(f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp=*.conf")
-
-    assert args.min_scenes == 0
-    argmax_last_scene = -1
-    max = -1
-    for i, path in enumerate(paths):
-        print(f"checking path: {path}")
-        assert min_objects == 2
-        if posthocon:
-            print(f"r: {'.*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt'}")
-            result = re.search(r".*ARKitScenes=obj=2.*sp=(.*)_posthocon.txt", path)
-        else:
-            print(f"r: {'.*ARKitScenes=obj=2.*sp=(.*).conf'}")
-            result = re.search(r".*ARKitScenes=obj=2.*sp=(.*).conf", path)
-        count = int(result.group(1))
-        if count > max:
-            argmax_last_scene = i
-            max = count
-    if argmax_last_scene != -1:
-        print(f"Will cache from {paths[argmax_last_scene]}")
-        config = parse(paths[argmax_last_scene])
-        data_entries = list(config['metropolis_data'])
-        # args.min_scenes = max
-        argmax_last_scene = max
-        # TODO objects_counts_map
-    else:
-        argmax_last_scene = 0
-
+    # first min/max, then cached data_entries
     scenes = get_scene_ids_gts(args.data_root)
-
     if args.max_scenes is not None:
         scenes = scenes[:args.max_scenes]
     scenes = scenes[args.min_scenes:]
+    scenes = scenes[len(data_entries):]
 
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
@@ -333,10 +338,7 @@ def main():
     all_z_hor = 0
 
     start_time = time.time()
-    print(f"argmax_last_scene:{argmax_last_scene}")
-    # # DELETE ME
-    # argmax_last_scene = 0
-    for scene_index, (scene_id, gt_path) in enumerate(list(scenes)[argmax_last_scene:]):
+    for scene_index, (scene_id, gt_path) in enumerate(list(scenes)):
 
         try:
             skipped, boxes_corners, centers_3d, sizes, labels, uids = extract_gt(gt_path)
@@ -517,7 +519,6 @@ def main():
                 min_projections = 100
                 corners_count = sum(mask_ok).item()
                 if corners_count >= args.min_corners and proj_to_use.shape[1] >= min_projections:
-
                     corners_counts.append(corners_count)
 
                     # new 2D bboxes...
@@ -583,48 +584,11 @@ def main():
                 all_chosen_2d_dirs, all_heights, all_centers_2d = get_directions(boxes_2d)
                 widths_heights_new = np.hstack((all_heights[:, None], all_heights[:, None])).tolist()
 
-            # demo_vp disabled
-            # centers_2d = None
-            # chosen_2d_dirs = None
             if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
 
                 vis_file_path = f"imgs/{scene_id}/ok/ok_{frame_index}.png"
 
-                # centers_2d, \
-                # pure_R_y_real, \
-                # chosen_2d_dirs, \
-                # vp_homo, \
-                # pure_R_y_gt, \
-                # _, \
-                # dirs_gt, \
-                # _, \
-                # vp_homo_gt = get_vps(K, R_gt, t_gt, boxes_2d_newly_added)
-
-                # CONTINUE!!!
-                # all_centers_2d, \
-                # all_chosen_2d_dirs, \
-                # all_heights, \
-                # all_dirs_gt_ys, \
-                # centers_2d_used_vps, \
-                # vp_homo_reals, \
-                # pure_R_y_reals, \
-                # vp_homo_gts, \
-                # pure_R_y_gts = get_vps(K, R_gt_new, t_gt, boxes_2d)
-
-                # # FIXME: REDUNDANCY
-                # assert np.allclose(all_centers_2d, x_i)
-
                 extra_map = {
-                    # all
-                    # "all_centers_2d": all_centers_2d.tolist(),
-                    # "all_chosen_2d_dirs": all_chosen_2d_dirs.tolist(),
-                    # "all_dirs_gt_ys": all_dirs_gt_ys.tolist(),
-                    # # 2 over n
-                    # "pure_R_y_reals": pure_R_y_reals,
-                    # "vp_homo_reals": vp_homo_reals if vp_homo_reals is not None else None,
-                    # "pure_R_y_gts": pure_R_y_gts,
-                    # "vp_homo_gts": vp_homo_gts if vp_homo_gts is not None else None,
-
                     # old
                     "R_cs_l": R_gt_q_l,
                     "x_i_new": np.asarray(x_i_new).tolist(),
@@ -637,7 +601,6 @@ def main():
                 # R_cs_l (+ _old)
                 # x_i (+ _old)
                 # boxes_2d (newly_added)
-
                 append_entry(data_entries,
                              # new -> visualization, orig image
                              orig_img_path=image_path,
@@ -655,9 +618,11 @@ def main():
                              # new
                              R_ego_l=R_gt_q_l,  # list[4] : quaternion
                              t_ego_l=t_gt[:, 0].tolist(),  # list[3]: meters
-                             X_i_up_down=np.array([X_i_up, X_i_down]),  # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
+                             X_i_up_down=np.array([X_i_up, X_i_down]),
+                             # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
                              # Apparently this is not used...
-                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],  # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
+                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],
+                             # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
                              # FIXME: DEBUG!!!!
@@ -699,7 +664,7 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{suffix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}"
+            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}_sp={argmax_last_scene + scene_index + 1}"
             save(sp_file_path, data_entries, objects_counts_map, vars(args))
 
     elapased = time.time() - start_time
@@ -707,32 +672,13 @@ def main():
 
     print("Saving to hocon")
     # ars(args) OK
-    save(save_file_path, data_entries, objects_counts_map, vars(args))
+    save(base_file_path, data_entries, objects_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
     print(f"all_R_y: {all_R_y}")
     print(f"all_x_hor: {all_x_hor}")
     print(f"all_z_hor: {all_z_hor}")
 
-
-# TODO
-
-# remove filter... OK
-# add the fitting to the object
-# visualize that ... OK
-# clean up - (quickly) ...
-# --min_corners=6 --min_obj=1 --data_root ../../download/3dod/Training --vis --frame_rate 1
-# ignore?? TODO: sky direction: a) try out some visos b) just filter on UP
-
-# continue:
-# - all needed data / per scene !!
-# - how to run it on the server?
-# - clean up and externalize
-# - run to generate the data
-# - which frames / scenes it will be used?
-# - measure the time to read the data
-# - adopt to original project (new dataset)
-# pose - normalize (assert), deviations..., filters...
 
 if __name__ == "__main__":
     main()
