@@ -68,7 +68,7 @@ def get_cached_data(base_file_path, format_suffix, out_log=False):
     else:
         print("No cache found")
 
-    return data_entries, objects_counts_map
+    return data_entries, max if max != -1 else 0, objects_counts_map
 
 
 # TODO make it arkit agnostic
@@ -361,15 +361,14 @@ def main():
     base_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}"
     print(f"Will save into: {base_file_path}")
 
-    data_entries, objects_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
-    cache_length = len(data_entries)
+    data_entries, cached_scenes_count, objects_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
 
     # first min/max, then cached data_entries
     scenes = get_scene_ids_gts(args.data_root)
     if args.max_scenes is not None:
         scenes = scenes[:args.max_scenes]
     scenes = scenes[args.min_scenes:]
-    scenes = scenes[len(data_entries):]
+    scenes = scenes[cached_scenes_count:]
 
     print(f"{len(scenes)} scenes:")
     print("\n".join([str(s) for s in scenes]))
@@ -720,7 +719,7 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{base_file_path}_sp={cache_length + scene_index + 1}"
+            sp_file_path = f"{base_file_path}_sp={cached_scenes_count + scene_index + 1}"
             # save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
             save(f"{sp_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
 
