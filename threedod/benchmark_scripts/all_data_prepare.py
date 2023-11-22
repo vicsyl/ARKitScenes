@@ -7,14 +7,16 @@ import time
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 import utils.box_utils as box_utils
 from common.common_transforms import evaluate_pose, project_from_frame_R_t
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
-from common.data_parsing import parse
+from common.data_parsing import parse, ConfStatic
 from common.fitting import fit_min_area_rect
 from common.vanishing_point import get_directions, get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit
 from data_utils import append_entry, save
+from decomposition import RotSampler, Rot, Smp, RSampling
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
 from utils.tenFpsDataLoader import TenFpsDataLoader, extract_gt
@@ -31,7 +33,7 @@ class DataPrepareConf:
     visualize_rest = False
 
 
-def get_cached_data(base_file_path, read_posthocon=True, out_log=False):
+def get_cached_data(base_file_path, format_suffix, out_log=False):
 
     def log(s):
         if out_log:
@@ -40,7 +42,6 @@ def get_cached_data(base_file_path, read_posthocon=True, out_log=False):
     data_entries = []
     # TODO objects_counts_map caching
     objects_counts_map = defaultdict(int)
-    format_suffix = "_posthocon.txt" if read_posthocon else ".conf"
 
     paths = glob.glob(f"{base_file_path}_sp=*{format_suffix}")
     log(f"Cached paths: {paths}")
@@ -48,7 +49,7 @@ def get_cached_data(base_file_path, read_posthocon=True, out_log=False):
     max_cached_path = None
     max = -1
     for path in paths:
-        re_s = f".*ARKitScenes.*sp=(.*)(_posthocon.txt|.conf)"
+        re_s = f".*ARKitScenes.*sp=(.*){format_suffix}"
         result = re.search(re_s, path)
         if not result:
             print(f"checked path: {path} for {re_s}, found nothing!")
@@ -70,19 +71,31 @@ def get_cached_data(base_file_path, read_posthocon=True, out_log=False):
     return data_entries, objects_counts_map
 
 
+# TODO make it arkit agnostic
 def visualize(frame,
+              K,
+              R_gt,
+              R_gt_new,
+              t_gt,
+              lwhs,
               boxes_2d,
+              boxes_8_points_2d_old,
               widths_heights_old,
               widths_heights_new,
+              x_i,
+              x_i_new,
+              X_i,
+              X_i_new,
               projections,
               mask_pts_in_box,
               centers_proj_in_2d,
               boxes_crns,
               scene_id,
               file_name):
-    def vis_directions_from_center(center, dir_l, fmt, linewidth=2):
+
+    def vis_directions_from_center(center, dir_l, fmt, label, linewidth=2):
         dir_vis = np.vstack((center, center + dir_l))
-        ax.plot(dir_vis[:, 0], dir_vis[:, 1], fmt, linewidth=linewidth)
+        ax.plot(dir_vis[:, 0], dir_vis[:, 1], fmt, linewidth=linewidth, label=label)
 
     def vis_directions_from_boxes(dir_l, centers_2d_loc, fmt, linewidth=2):
         dir_vis1 = np.zeros((boxes_2d.shape[0], 2, 2))
@@ -92,21 +105,12 @@ def visualize(frame,
         for i in range(dir_vis1.shape[0]):
             ax.plot(dir_vis1[i, :, 0], dir_vis1[i, :, 1], fmt, linewidth=linewidth)
 
+    printoptions = np.get_printoptions()
+    np.set_printoptions(formatter={'float': lambda x: "{0:.3g}".format(x), "max_line_width": np.inf}, linewidth=np.inf)
+
     K = frame["intrinsics"]
-    pcd_old = frame["pcd"]
-    pose = frame["pose"]
-    R_gt, t_gt = R_t_from_frame_pose(pose)
-    R_gt_new = change_r_arkit(R_gt)
-
-    # pcd_new used only here
-    pcd = change_x_3d_arkit(pcd_old)
-
-    # test projections (project_from_frame_R_t vs. project_from_frame)
-    projections_test = project_from_frame_R_t(K, R_gt_new, t_gt.T[0], pcd)
-    assert np.allclose(projections, projections_test)
-
-    # projections_test_perm = project_from_frame_R_t(K, R_gt_permuted, t_gt_permuted.T[0], pcd_permuted)
-    # assert np.allclose(projections, projections_test_perm)
+    # pose = frame["pose"]
+    # R_gt, t_gt = R_t_from_frame_pose(pose)
 
     # Show image.
     _, ax = plt.subplots(1, 1, figsize=(9, 16))
@@ -115,11 +119,25 @@ def visualize(frame,
     ax.set_xlim(0, img.shape[1])
     ax.set_ylim(img.shape[0], 0)
 
-    # 2D bbox
-    for b_i in range(len(boxes_2d)):
-        for v_i in range(3):
-            ax.plot(boxes_2d[b_i][v_i:v_i + 2][:, 0], boxes_2d[b_i][v_i:v_i + 2][:, 1], "y-.", linewidth=2)
-        ax.plot(boxes_2d[b_i][[0, 3]][:, 0], boxes_2d[b_i][[0, 3]][:, 1], "y-.", linewidth=2)
+    # 2D bbox vis
+    def vis_2d_box(boxes_2d_l, fmt, label):
+        label_on = True
+        for b_i in range(len(boxes_2d_l)):
+            for v_i in range(3):
+                ax.plot(boxes_2d_l[b_i][v_i:v_i + 2][:, 0], boxes_2d_l[b_i][v_i:v_i + 2][:, 1], fmt, linewidth=2)
+            ax.plot(boxes_2d_l[b_i][[0, 3]][:, 0], boxes_2d_l[b_i][[0, 3]][:, 1], fmt, linewidth=2, label=label if label_on else None)
+            if label_on:
+                label_on = False
+
+    vis_2d_box(boxes_2d, "y-.", "new boxes")
+    if len(boxes_8_points_2d_old) > 0:
+        boxes_8_points_2d_old = np.transpose(np.array(boxes_8_points_2d_old)[:, :, 1::2], axes=(0, 2, 1))
+        vis_2d_box(boxes_8_points_2d_old, "r-.", "old boxes")
+
+    if x_i.shape[0] > 0:
+        ax.plot(x_i[:, 0], x_i[:, 1], "rx", markersize=6, markeredgewidth=3, label="x_i old")
+    if x_i_new.shape[0] > 0:
+        ax.plot(x_i_new[:, 0], x_i_new[:, 1], "bx", markersize=6, markeredgewidth=3, label="x_i new")
 
     def unproject_center_r_t_local(R_gt, t_gt, K_for_center):
         center_homo = np.array([[0.0], [0.0], [1.0]])
@@ -136,35 +154,57 @@ def visualize(frame,
 
     # the main axes
     if DataPrepareConf.visualize_main_directions:
-        img_center, _ = unproject_center_r_t_local(R_gt_new, t_gt, K)
-        img_center = img_center[:, :2]
-        dirs_gt_x, dirs_gt_y, dirs_gt_z = get_main_directions(img_center, K, R_gt_new, t_gt[:, 0])
-        ax.plot(img_center[:, 0:1], img_center[:, 1:2], "rx", markersize=20, markeredgewidth=2)
-        vis_directions_from_center(img_center, dirs_gt_x, fmt="r-", linewidth=3)
-        vis_directions_from_center(img_center, dirs_gt_y, fmt="g-", linewidth=3)
-        vis_directions_from_center(img_center, dirs_gt_z, fmt="b-", linewidth=3)
+        def vis_main_dir(R_l, t_l, K_l, line_fmt, legent_suffix):
+            img_center, _ = unproject_center_r_t_local(R_l, t_l, K_l)
+            img_center = img_center[:, :2]
+            dirs_gt_x, dirs_gt_y, dirs_gt_z = get_main_directions(img_center, K, R_l, t_l[:, 0])
+            ax.plot(img_center[:, 0:1], img_center[:, 1:2], "rx", markersize=20, markeredgewidth=2)
+            vis_directions_from_center(img_center, dirs_gt_x, fmt=f"r{line_fmt}", label=f"x-{legent_suffix}", linewidth=3)
+            vis_directions_from_center(img_center, dirs_gt_y, fmt=f"g{line_fmt}", label=f"y-{legent_suffix}", linewidth=3)
+            vis_directions_from_center(img_center, dirs_gt_z, fmt=f"b{line_fmt}",  label=f"z-{legent_suffix}", linewidth=3)
+
+        vis_main_dir(R_gt, t_gt, K, "-", "orig")
+        R_gt_new = change_r_arkit(R_gt)
+        vis_main_dir(R_gt_new, t_gt, K, "--", "new")
+        plt.legend()
+
+    def log_title(s):
+        print_data = True
+        return f"{s}\n" if print_data else ""
+
+    sampler = RotSampler([
+        RSampling(Rot.Y, 1, Smp.UNIFORM),
+        RSampling(Rot.X, 1, Smp.UNIFORM),
+        RSampling(Rot.Z, 1, Smp.UNIFORM),
+    ])
 
     title = ""
-    title += f"boxes:{boxes_2d}\n"
-    title += f"widths_heights_old:{widths_heights_old}\n"
-    title += f"widths_heights_new:{widths_heights_new}\n"
+    # title += log_title(f"boxes:{np.vstack((boxes_2d, boxes_2d, boxes_2d))}")
+    pretty_gt, _, _ = sampler.decompose_and_info(R_gt)
+    title += log_title(f"R_gt={pretty_gt}")
+    pretty_new, _, _ = sampler.decompose_and_info(R_gt_new)
+    title += log_title(f"R_gt_new={pretty_new}")
 
-    if DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 0:
+    title += log_title(f"widths_heights_old:{np.array(widths_heights_old)}")
+    title += log_title(f"x_i/centers_old: {x_i}")
+    title += log_title(f"widths_heights_new:{np.array(widths_heights_new)}")
+    title += log_title(f"x_i/centers_new: {x_i_new}")
+    title += log_title(f"lwhs: {np.array(lwhs)}")
+
+    if False or DataPrepareConf.visualize_vanishing_point and boxes_2d.shape[0] > 0:
 
         all_centers_2d, all_chosen_2d_dirs, all_heights, all_dirs_gt_ys, \
-        centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt_new, t_gt,
-                                                                                                boxes_2d)
+        centers_2d_used_vps, vp_homo_reals, pure_R_y_reals, vp_homo_gts, pure_R_y_gts = get_vps(K, R_gt, t_gt, boxes_2d)
 
         # max_line_width ?
-        np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x), "max_line_width": np.inf})
-        title += f"2d_bb_centers:\n{all_centers_2d}\n"
-        title += f"all_heights:\n{all_heights}\n"
+        title += log_title(f"2d_bb_centers:\n{all_centers_2d}\n")
+        title += log_title(f"all_heights:\n{all_heights}\n")
 
         all_chosen_2d_dirs_normed = all_chosen_2d_dirs / np.linalg.norm(all_chosen_2d_dirs, axis=1)[:, None]
-        title += f"detected boxes vertical directions:\n{all_chosen_2d_dirs_normed}\n"
+        title += log_title(f"detected boxes vertical directions:\n{all_chosen_2d_dirs_normed}\n")
 
         all_dirs_gt_ys_normed = all_dirs_gt_ys / np.linalg.norm(all_dirs_gt_ys, axis=1)[:, None]
-        title += f"gt projected vertical directions:\n{all_dirs_gt_ys_normed}\n"
+        title += log_title(f"gt projected vertical directions:\n{all_dirs_gt_ys_normed}\n")
 
         # something like this
         dir_errors = []
@@ -174,7 +214,7 @@ def visualize(frame,
             alpha = min(alpha, 180 - alpha)
             dir_errors.append(alpha)
         dir_errors = np.array(dir_errors)
-        title += f"vertical direction errors[deg]:\n{dir_errors}\n"
+        title += log_title(f"vertical direction errors[deg]:\n{dir_errors}\n")
 
         # boxes_2d - all directions
         for i in range(2):
@@ -219,7 +259,7 @@ def visualize(frame,
             ax.plot(centers_display[0], centers_display[1], f"{colr}x", markersize="15", markeredgewidth=4)
 
             if centers_display.shape[1] != 0:
-                title += f"centers_display:\n{centers_display[:2, 0]}\n"
+                title += log_title(f"centers_display:\n{centers_display[:2, 0]}\n")
 
             one_box = boxes_crns[b_i].T
             crns_display = one_box[:, one_box[2] == 1.0]
@@ -259,6 +299,7 @@ def visualize(frame,
     plt.savefig(file_name, bbox_inches='tight')
     plt.close()
     print(f"{file_name} saved")
+    np.set_printoptions(**printoptions)
 
 
 def get_scene_ids_gts(data_root):
@@ -296,6 +337,7 @@ def main():
     parser.add_argument(
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
     )
+    parser.add_argument("--format_suffix", type=str, default=ConfStatic.toml_suffix)
     parser.add_argument("--vis", action="store_true", default=False)
     parser.add_argument("--min_corners", type=int, default=6)
     parser.add_argument("--min_scenes", type=int, default=0)
@@ -319,7 +361,7 @@ def main():
     base_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}"
     print(f"Will save into: {base_file_path}")
 
-    data_entries, objects_counts_map = get_cached_data(base_file_path, read_posthocon=True, out_log=True)
+    data_entries, objects_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
     cache_length = len(data_entries)
 
     # first min/max, then cached data_entries
@@ -368,6 +410,7 @@ def main():
 
         start_time_scene = time.time()
         for frame_index in range(len(loader)):
+        # for frame_index in list(range(338, 341)):
         # for frame_index in list(range(10)) + list(range(338, 341)):
         # for frame_index in list(range(100)) + list(range(338, 341)):
 
@@ -405,16 +448,15 @@ def main():
             R_gt, t_gt = R_t_from_frame_pose(pose)
 
             # projections are fine !!!
-            projections = project_from_frame(K, pose, pcd).T
-            projections_2 = project_from_frame_R_t(K, R_gt, t_gt.T[0], pcd)
-            assert np.allclose(projections, projections_2)
+            projections_from_pose = project_from_frame(K, pose, pcd).T
+            projections_from_r_t = project_from_frame_R_t(K, R_gt, t_gt.T[0], pcd)
+            assert np.allclose(projections_from_pose, projections_from_r_t)
 
+            # optionally test R_gt_new
             R_gt_new = change_r_arkit(R_gt)
-
-            # pcd_new used only here
             pcd_new = change_x_3d_arkit(pcd)
-            projections_3 = project_from_frame_R_t(K, R_gt_new, t_gt.T[0], pcd_new)
-            assert np.allclose(projections, projections_3)
+            projections_new = project_from_frame_R_t(K, R_gt_new, t_gt.T[0], pcd_new)
+            assert np.allclose(projections_from_pose, projections_new)
 
             boxes_corners_used = boxes_corners.reshape(-1, 3)
             boxes_crns = project_from_frame(K, pose, boxes_corners_used)
@@ -487,7 +529,7 @@ def main():
             # already present
             # K = frame["intrinsics"]
             R_gt_q_l = Quaternion._from_matrix(R_gt).elements.tolist()
-            R_gt_q_l_new = Quaternion._from_matrix(R_gt_new).elements.tolist()
+            # R_gt_q_l_new = Quaternion._from_matrix(R_gt_new).elements.tolist()
             boxes_2d = []
 
             # this is new -> new 2D bboxes
@@ -500,13 +542,12 @@ def main():
             X_i_down = []
 
             # FIXME not used ?
-            all_2d_corners = []
+            boxes_8_points_2d_old = []
 
             obj_names = []
             # scene_token = scene_id
             all_orientations = []
             widths_heights_old = []
-            widths_heights_new = []
             lwhs = []
             corners_counts = []
             # sample_data_token = frame_index
@@ -516,14 +557,14 @@ def main():
 
                 one_box = boxes_crns[obj_i].T
                 mask_ok = vectors_ok(one_box)
-                proj_to_use = projections[:, mask_pts_in_box[:, obj_i]]
+                proj_to_use = projections_from_pose[:, mask_pts_in_box[:, obj_i]]
                 min_projections = 100
                 corners_count = sum(mask_ok).item()
                 if corners_count >= args.min_corners and proj_to_use.shape[1] >= min_projections:
                     corners_counts.append(corners_count)
 
                     # new 2D bboxes...
-                    pixels_to_fit = projections[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(int)
+                    pixels_to_fit = projections_from_pose[:, mask_pts_in_box[:, obj_i]][:2].transpose().astype(int)
                     box = fit_min_area_rect(pixels_to_fit)
                     boxes_2d.append(box)
                     new_center_2d = box.sum(axis=0) / 4
@@ -547,13 +588,15 @@ def main():
                         [c_x_old, min_2dy],
                         [max_2dx, min_2dy],
                     ]
-                    all_2d_corners.append(two_d_corners)
+                    boxes_8_points_2d_old.append(two_d_corners)
                     widths_heights_old.append([max_2dx - min_2dx, max_2dy - min_2dy])
 
                     # 3D
                     center_3d = centers_3d[obj_i]
                     print(f"object index: {obj_i}")
                     X_i.append(center_3d)
+
+                    # NEW
                     center_3d_new = centers_3d_new[obj_i]
                     X_i_new.append(center_3d_new)
 
@@ -580,7 +623,9 @@ def main():
             obj_count = len(X_i)
             objects_counts_map[obj_count] += 1
 
+            boxes_8_points_2d_old = [np.array(l).T for l in boxes_8_points_2d_old]
             boxes_2d = np.array(boxes_2d)
+            widths_heights_new = []
             if boxes_2d.shape[0] > 0:
                 all_chosen_2d_dirs, all_heights, all_centers_2d = get_directions(boxes_2d)
                 widths_heights_new = np.hstack((all_heights[:, None], all_heights[:, None])).tolist()
@@ -591,7 +636,7 @@ def main():
 
                 extra_map = {
                     # old
-                    "R_cs_l": R_gt_q_l,
+                    "R_gt_new": np.asarray(R_gt_new).tolist(),
                     "x_i_new": np.asarray(x_i_new).tolist(),
 
                     # bugfix
@@ -622,7 +667,7 @@ def main():
                              X_i_up_down=np.array([X_i_up, X_i_down]),
                              # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
                              # Apparently this is not used...
-                             two_d_cmcs=[np.array(l).T for l in all_2d_corners],
+                             two_d_cmcs=boxes_8_points_2d_old, # "OLD 2D boxes"
                              # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
@@ -646,14 +691,24 @@ def main():
 
             print(f"frame_index: {frame_index + 1}/{range(len(loader))}")
             if args.vis:
-                print(f"R:\n{R_gt_new}")
-                rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt_new, t_gt)
-                print(f"rot_err:\n{rot_err}")
+                # print(f"R:\n{R_gt_new}")
+                # rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt_new, t_gt)
+                # print(f"rot_err:\n{rot_err}")
                 visualize(frame,
+                          K,
+                          R_gt,
+                          R_gt_new,
+                          t_gt,
+                          lwhs,
                           boxes_2d,
+                          boxes_8_points_2d_old,
                           widths_heights_old,
                           widths_heights_new,
-                          projections,
+                          np.array(x_i),
+                          np.asarray(x_i_new),
+                          np.asarray(X_i),
+                          np.asarray(X_i_new),
+                          projections_from_pose,
                           mask_pts_in_box,
                           centers_proj_in_2d,
                           boxes_crns,
@@ -665,15 +720,17 @@ def main():
 
         every_other_cache = 2
         if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
-            sp_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}_sp={cache_length + scene_index}"
-            save(sp_file_path, data_entries, objects_counts_map, vars(args))
+            sp_file_path = f"{base_file_path}_sp={cache_length + scene_index + 1}"
+            # save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
+            save(f"{sp_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
 
     elapased = time.time() - start_time
     print(f"total time: %f sec" % elapased)
 
     print("Saving to hocon")
     # ars(args) OK
-    save(base_file_path, data_entries, objects_counts_map, vars(args))
+    # save(f"{base_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
+    save(f"{base_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
 
     print(f"all_frames: {all_frames}")
     print(f"all_R_y: {all_R_y}")

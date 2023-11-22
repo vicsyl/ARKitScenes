@@ -3,7 +3,7 @@ import numpy as np
 from common.data_parsing import save_to_file
 
 
-def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
+def save(fp, entries, objects_counts_map=None, conf_attribute_map={}, all_formats=False):
 
     at_least_objects_counts_map = {}
     if objects_counts_map is not None:
@@ -20,7 +20,7 @@ def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
             'samples_with_at_least_n_objects': at_least_objects_counts_map,
             'config': conf_attribute_map
             }
-    save_to_file(fp, data, both=True)
+    save_to_file(fp, data, all_formats=all_formats)
 
 
 def append_entry(entries_list,
