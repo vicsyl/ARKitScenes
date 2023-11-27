@@ -593,7 +593,6 @@ def main():
 
                     # 3D
                     center_3d = centers_3d[obj_i]
-                    print(f"object index: {obj_i}")
                     X_i.append(center_3d)
 
                     # NEW
@@ -689,7 +688,7 @@ def main():
                     print(f"obj_count >= min_objects: {obj_count >= min_objects}")
                     print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
 
-            print(f"frame_index: {frame_index + 1}/{range(len(loader))}")
+            print(f"frame_index: {frame_index + 1}/{len(loader)}")
             if args.vis:
                 # print(f"R:\n{R_gt_new}")
                 # rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt_new, t_gt)
