@@ -333,6 +333,7 @@ def main():
     )
 
     # this should be 1
+    parser.add_argument("--every_other_cache", default=5, type=int, help="cache after every nth scene")
     parser.add_argument("--frame_rate", default=1, type=int, help="sampling rate of frames")
     parser.add_argument(
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
@@ -717,11 +718,10 @@ def main():
         elapased = time.time() - start_time_scene
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
 
-        every_other_cache = 2
-        if (scene_index + 1) % every_other_cache == 0 and scene_index + 1 != len(scenes):
+        if (scene_index + 1) % args.every_other_cache == 0 and scene_index + 1 != len(scenes):
             sp_file_path = f"{base_file_path}_sp={cached_scenes_count + scene_index + 1}"
-            # save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
-            save(f"{sp_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
+            save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
+            # save(f"{sp_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
 
     elapased = time.time() - start_time
     print(f"total time: %f sec" % elapased)
