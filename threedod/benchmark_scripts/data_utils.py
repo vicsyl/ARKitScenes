@@ -3,18 +3,16 @@ import numpy as np
 from common.data_parsing import save_to_file
 
 
-def save(fp, entries, objects_counts_map=None, conf_attribute_map={}, all_formats=False):
+def save(fp, entries, objects_counts_map, at_least_objects_counts_map, conf_attribute_map={}, all_formats=False):
 
-    at_least_objects_counts_map = {}
-    if objects_counts_map is not None:
-        at_least_n_sum = 0
-        for obj, count in objects_counts_map.items():
-            if obj > 10:
-                at_least_n_sum += count
-        for at_least in range(10, 0, -1):
-            if objects_counts_map.__contains__(at_least):
-                at_least_n_sum += objects_counts_map[at_least]
-            at_least_objects_counts_map[str(at_least)] = at_least_n_sum
+    at_least_n_sum = 0
+    for obj, count in objects_counts_map.items():
+        if obj > 10:
+            at_least_n_sum += count
+    for at_least in range(10, 0, -1):
+        if objects_counts_map.__contains__(at_least):
+            at_least_n_sum += objects_counts_map[at_least]
+        at_least_objects_counts_map[str(at_least)] += at_least_n_sum
 
     data = {'metropolis_data': entries,
             'samples_with_at_least_n_objects': at_least_objects_counts_map,

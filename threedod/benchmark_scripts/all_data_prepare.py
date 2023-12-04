@@ -39,10 +39,7 @@ def get_cached_data(base_file_path, format_suffix, out_log=False):
         if out_log:
             print(s)
 
-    data_entries = []
     # TODO objects_counts_map caching
-    objects_counts_map = defaultdict(int)
-
     paths = glob.glob(f"{base_file_path}_sp=*{format_suffix}")
     log(f"Cached paths: {paths}")
 
@@ -64,11 +61,13 @@ def get_cached_data(base_file_path, format_suffix, out_log=False):
         print(f"Will cache from {max_cached_path}")
         config = parse(max_cached_path)
         data_entries = list(config['metropolis_data'])
-        # TODO objects_counts_map
+        min_counts_map = config['samples_with_at_least_n_objects']
     else:
+        data_entries = []
+        min_counts_map = defaultdict(int)
         print("No cache found")
 
-    return data_entries, max if max != -1 else 0, objects_counts_map
+    return data_entries, max if max != -1 else 0, min_counts_map
 
 
 # TODO make it arkit agnostic
@@ -362,7 +361,7 @@ def main():
     base_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}"
     print(f"Will save into: {base_file_path}")
 
-    data_entries, cached_scenes_count, objects_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
+    data_entries, cached_scenes_count, min_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
 
     # first min/max, then cached data_entries
     scenes = get_scene_ids_gts(args.data_root)
@@ -379,6 +378,7 @@ def main():
     all_R_y = 0
     all_x_hor = 0
     all_z_hor = 0
+    objects_counts_map = defaultdict(int)
 
     start_time = time.time()
     for scene_index, (scene_id, gt_path) in enumerate(list(scenes)):
@@ -719,16 +719,13 @@ def main():
 
         if (scene_index + 1) % args.every_other_cache == 0 and scene_index + 1 != len(scenes):
             sp_file_path = f"{base_file_path}_sp={cached_scenes_count + scene_index + 1}"
-            save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
-            # save(f"{sp_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
+            save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, min_counts_map, vars(args))
 
     elapased = time.time() - start_time
     print(f"total time: %f sec" % elapased)
 
     print("Saving to hocon")
-    # ars(args) OK
-    # save(f"{base_file_path}{args.format_suffix}", data_entries, objects_counts_map, vars(args))
-    save(f"{base_file_path}", data_entries, objects_counts_map, vars(args), all_formats=True)
+    save(f"{base_file_path}{args.format_suffix}", data_entries, objects_counts_map, min_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
     print(f"all_R_y: {all_R_y}")
