@@ -26,6 +26,8 @@ def visualize(frame,
               x_i_new,
               X_i,
               X_i_new,
+              X_i_up,
+              X_i_down,
               projections,
               mask_pts_in_box,
               centers_proj_in_2d,
@@ -78,10 +80,18 @@ def visualize(frame,
         boxes_8_points_2d_old = np.transpose(np.array(boxes_8_points_2d_old)[:, :, 1::2], axes=(0, 2, 1))
         vis_2d_box(boxes_8_points_2d_old, "r-.", "old boxes")
 
-    if x_i.shape[0] > 0:
-        ax.plot(x_i[:, 0], x_i[:, 1], "rx", markersize=6, markeredgewidth=3, label="x_i old")
-    if x_i_new.shape[0] > 0:
-        ax.plot(x_i_new[:, 0], x_i_new[:, 1], "bx", markersize=6, markeredgewidth=3, label="x_i new")
+    def plot_pempty_np(ar, fmt, label, markersize=6, markeredgewidth=3):
+        if ar.shape[0] > 0:
+            ax.plot(ar[:, 0], ar[:, 1], fmt, markersize=markersize, markeredgewidth=markeredgewidth, label=label)
+
+    plot_pempty_np(x_i, fmt="rx", label="x_i old")
+    plot_pempty_np(x_i_new, fmt="bx", label="x_i new")
+    x_proj = project_from_frame_R_t(K, R_gt, t_gt[:, 0], X_i).T
+    plot_pempty_np(x_proj, fmt="mx", label="X_i", markersize=10, markeredgewidth=3)
+    x_proj = project_from_frame_R_t(K, R_gt, t_gt[:, 0], X_i_down).T
+    plot_pempty_np(x_proj, fmt="bx", label="X_i down", markersize=10, markeredgewidth=3)
+    x_proj = project_from_frame_R_t(K, R_gt, t_gt[:, 0], X_i_up).T
+    plot_pempty_np(x_proj, fmt="yx", label="X_i up", markersize=10, markeredgewidth=3)
 
     def unproject_center_r_t_local(R_gt, t_gt, K_for_center):
         center_homo = np.array([[0.0], [0.0], [1.0]])
@@ -98,14 +108,14 @@ def visualize(frame,
 
     # the main axes
     if visualize_main_directions:
-        def vis_main_dir(R_l, t_l, K_l, line_fmt, legent_suffix):
+        def vis_main_dir(R_l, t_l, K_l, line_fmt, legend_suffix):
             img_center, _ = unproject_center_r_t_local(R_l, t_l, K_l)
             img_center = img_center[:, :2]
             dirs_gt_x, dirs_gt_y, dirs_gt_z = get_main_directions(img_center, K, R_l, t_l[:, 0])
             ax.plot(img_center[:, 0:1], img_center[:, 1:2], "rx", markersize=20, markeredgewidth=2)
-            vis_directions_from_center(img_center, dirs_gt_x, fmt=f"r{line_fmt}", label=f"x-{legent_suffix}", linewidth=3)
-            vis_directions_from_center(img_center, dirs_gt_y, fmt=f"g{line_fmt}", label=f"y-{legent_suffix}", linewidth=3)
-            vis_directions_from_center(img_center, dirs_gt_z, fmt=f"b{line_fmt}",  label=f"z-{legent_suffix}", linewidth=3)
+            vis_directions_from_center(img_center, dirs_gt_x, fmt=f"r{line_fmt}", label=f"x-{legend_suffix}", linewidth=3)
+            vis_directions_from_center(img_center, dirs_gt_y, fmt=f"g{line_fmt}", label=f"y-{legend_suffix}", linewidth=3)
+            vis_directions_from_center(img_center, dirs_gt_z, fmt=f"b{line_fmt}", label=f"z-{legend_suffix}", linewidth=3)
 
         vis_main_dir(R_gt, t_gt, K, "-", "orig")
         R_gt_new = change_r_arkit(R_gt)
@@ -191,7 +201,7 @@ def visualize(frame,
 
     if visualize_rest:
         color = ["b", "r", "g", "y", "m", "c", "k", "b", "r"]
-        print(f"size: {mask_pts_in_box.shape[1]}")
+        # print(f"size: {mask_pts_in_box.shape[1]}")
         for b_i in range(mask_pts_in_box.shape[1]):
             colr = color[b_i % 9]
             # point clouds per objects

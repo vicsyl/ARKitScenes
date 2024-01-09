@@ -44,6 +44,22 @@ def get_scene_ids_gts(data_root):
     return ret
 
 
+def get_X_i_up_down(one_box_3d, center_3d):
+
+    # half_dimension_up = box_3d[4] / 2
+    half_dimension_up = (one_box_3d[:, 0] - one_box_3d[:, 4]) / 2
+    up_unit = half_dimension_up / np.linalg.norm(half_dimension_up)
+    alpha = math.acos(up_unit[2]) * 180 / math.pi
+    one_X_up = center_3d + half_dimension_up
+    one_X_down = center_3d - half_dimension_up
+
+    one_X_up_check = one_box_3d[:, 4:8].sum(axis=1)
+    np.allclose(one_X_up_check, one_X_up)
+    one_X_down_check = one_box_3d[:, 0:4].sum(axis=1)
+    np.allclose(one_X_down_check, one_X_down)
+    return one_X_up, one_X_down, alpha
+
+
 def main():
     # --data_root ../train/Training
     # --scene_id 47333462
@@ -71,6 +87,7 @@ def main():
     )
     parser.add_argument("--format_suffix", type=str, default=Configuration.toml_suffix)
     parser.add_argument("--vis", action="store_true", default=False)
+    parser.add_argument("--vis_valid", action="store_true", default=False)
     parser.add_argument("--show", action="store_true", default=False)
     parser.add_argument("--min_corners", type=int, default=6)
     parser.add_argument("--min_scenes", type=int, default=0)
@@ -78,7 +95,16 @@ def main():
     parser.add_argument("--ang_tol", type=float, default=None)
     parser.add_argument("--min_obj", type=int, default=2)
     parser.add_argument("--verbose", action="store_true", default=False)
+    parser.add_argument("--in_hocon", type=str, default=None)
     args = parser.parse_args()
+
+    if args.in_hocon:
+        in_hocon_conf = parse(args.in_hocon)
+        print(f"in hocon parsed from: {args.in_hocon}")
+        print(f"has {len(in_hocon_conf['metropolis_data'])} entries.")
+    else:
+        in_hocon_conf = None
+        print(f"no in hocon parsed")
 
     print(f"Args:\{args}")
 
@@ -112,8 +138,9 @@ def main():
     all_x_hor = 0
     all_z_hor = 0
     objects_counts_map = defaultdict(int)
-
+    objects_gravity_deviations = []
     start_time = time.time()
+
     for scene_index, (scene_id, gt_path) in enumerate(list(scenes)):
 
         try:
@@ -197,6 +224,7 @@ def main():
             boxes_crns = project_from_frame(K, pose, boxes_corners_used)
 
             # test, if OK, then boxes_crns are fine
+            # FIXME: FYI you can delete this!!
             boxes_corners_used_new = change_x_3d_arkit(boxes_corners_used)
             boxes_crns_new = project_from_frame_R_t(K, R_gt_new, t_gt.T[0], boxes_corners_used_new).T
             assert np.allclose(boxes_crns_new, boxes_crns)
@@ -341,10 +369,11 @@ def main():
                     box_3d = boxes[obj_i]
                     assert np.all(box_3d[:3] == center_3d)
 
-                    # TODO check
-                    half_dimension_up = box_3d[4] / 2
-                    X_i_up.append(center_3d + half_dimension_up)
-                    X_i_down.append(center_3d - half_dimension_up)
+                    one_X_up, one_X_down, alpha = get_X_i_up_down(boxes_corners[obj_i].T, center_3d)
+                    objects_gravity_deviations.append(alpha)
+                    X_i_up.append(one_X_up)
+                    X_i_down.append(one_X_down)
+
                     # east, north - east, north, etc..(x0, x1), (y0, y1)
 
                     obj_names.append(gt_labels['types'][obj_i])
@@ -363,6 +392,7 @@ def main():
 
             if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
 
+                valid = True
                 vis_file_path = f"imgs/{scene_id}/ok/ok_{frame_index}.png"
 
                 extra_map = {
@@ -374,8 +404,25 @@ def main():
                     "X_i_new": np.asarray(X_i_new).tolist(),
                 }
 
-                # FIXME: what is this, anyway???
-                boxes_8_points_2d_old = np.transpose(np.array([t.T for t in boxes_8_points_2d_old]), (1, 0, 2)).tolist()
+                # list[n][np.array[2, 8](column_vectors)] => list[8][n][2[
+                boxes_8_points_2d_old_entry = np.transpose(np.array([t.T for t in boxes_8_points_2d_old]), (1, 0, 2)).tolist()
+
+                if in_hocon_conf:
+                    read_entry = in_hocon_conf["metropolis_data"][len(data_entries)]
+                    assert read_entry["orig_file_path"] == image_path
+
+                    def add_key(key):
+                        if read_entry.__contains__(key):
+                            vl = read_entry[key]
+                            extra_map[key] = vl
+                            #print(f"key '{key}' found")
+                        else:
+                            pass
+                            #print(f"key '{key}' not found")
+
+                    add_key("segmented_boxes_2d_projection")
+                    add_key("segmented_boxes_2d_classes")
+
                 # CHANGES:
                 # R_cs_l (+ _old)
                 # x_i (+ _old)
@@ -402,7 +449,7 @@ def main():
                              X_i_up_down=np.array([X_i_up, X_i_down]).tolist(),
                              # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
                              # Apparently this is not used...
-                             two_d_cmcs=boxes_8_points_2d_old, # "OLD 2D boxes"
+                             two_d_cmcs=boxes_8_points_2d_old_entry, # "OLD 2D boxes"
                              # list[n] of np.array(2, 8) # last index: east, north-east, north, etc.. (x0, x1), (y0, y1)
                              names=obj_names,  # list[n] types of objects
                              scene_token=scene_id,  # (e.g. 'trABmlDfsN1z6XCSJgFQxO')
@@ -419,13 +466,15 @@ def main():
 
             else:
                 vis_file_path = f"imgs/{scene_id}/all/all_{frame_index}.png"
+                valid = False
                 if args.verbose:
                     print("Frame skipped")
                     print(f"obj_count >= min_objects: {obj_count >= min_objects}")
                     print(f"is_R_y: {is_R_y}; is_x_hor: {is_x_hor} is_z_hor: {is_x_hor}")
 
-            print(f"frame_index: {frame_index + 1}/{len(loader)}")
-            if args.vis:
+            if args.verbose:
+                print(f"frame_index: {frame_index + 1}/{len(loader)}")
+            if (args.vis_valid and valid) or args.vis:
                 # print(f"R:\n{R_gt_new}")
                 # rot_err, pos_err = evaluate_pose(np.eye(3), t_gt, R_gt_new, t_gt)
                 # print(f"rot_err:\n{rot_err}")
@@ -444,6 +493,8 @@ def main():
                           np.asarray(x_i_new),
                           np.asarray(X_i),
                           np.asarray(X_i_new),
+                          np.asarray(X_i_up),
+                          np.asarray(X_i_down),
                           projections_from_pose,
                           mask_pts_in_box,
                           centers_proj_in_2d,
@@ -459,19 +510,32 @@ def main():
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
 
         if (scene_index + 1) % args.every_other_cache == 0 and scene_index + 1 != len(scenes):
+            log_object_gr_dev(objects_gravity_deviations)
             sp_file_path = f"{base_file_path}_sp={cached_scenes_count + scene_index + 1}"
             save(f"{sp_file_path}{args.format_suffix}", data_entries, objects_counts_map, min_counts_map, vars(args))
 
     elapased = time.time() - start_time
     print(f"total time: %f sec" % elapased)
 
-    print("Saving to hocon")
-    save(f"{base_file_path}{args.format_suffix}", data_entries, objects_counts_map, min_counts_map, vars(args))
+    fp = f"{base_file_path}{args.format_suffix}"
+    print(f"Saving to hocon: {fp}")
+    save(fp, data_entries, objects_counts_map, min_counts_map, vars(args))
 
     print(f"all_frames: {all_frames}")
-    print(f"all_R_y: {all_R_y}")
-    print(f"all_x_hor: {all_x_hor}")
-    print(f"all_z_hor: {all_z_hor}")
+    if args.verbose:
+        print(f"all_R_y: {all_R_y}")
+        print(f"all_x_hor: {all_x_hor}")
+        print(f"all_z_hor: {all_z_hor}")
+    log_object_gr_dev(objects_gravity_deviations)
+
+
+def log_object_gr_dev(objects_gravity_deviations):
+    print("objects_gravity_deviations: ")
+    print(f"count: {len(objects_gravity_deviations)}")
+    npa = np.array(objects_gravity_deviations)
+    print(f"max: {npa.max()}")
+    print(f"min: {npa.min()}")
+    print(f"mean: {npa.mean()}")
 
 
 if __name__ == "__main__":
