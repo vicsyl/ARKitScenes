@@ -374,6 +374,8 @@ def main():
                     "X_i_new": np.asarray(X_i_new).tolist(),
                 }
 
+                # FIXME: what is this, anyway???
+                boxes_8_points_2d_old = np.transpose(np.array([t.T for t in boxes_8_points_2d_old]), (1, 0, 2)).tolist()
                 # CHANGES:
                 # R_cs_l (+ _old)
                 # x_i (+ _old)
@@ -384,18 +386,20 @@ def main():
                              vis_img_path=vis_file_path,
                              corners_counts=corners_counts,
                              # new (new bboxes)
-                             x_i=np.array(x_i),  # np.ndarray(n, 2)
-                             X_i=np.asarray(X_i),  # np.ndarray(n, 3)
+                             # FIXME
+                             x_i=np.array(x_i).tolist(),  # np.ndarray(n, 2)
+                             X_i=np.asarray(X_i).tolist(),  # np.ndarray(n, 3)
                              # new (new bboxes)
-                             boxes_2d=boxes_2d,
-                             K=K,  # np.ndarray(3, 3)
+                             boxes_2d=boxes_2d.tolist(),
+                             K=K.tolist(),  # np.ndarray(3, 3)
                              # new
                              R_cs_l=R_gt_q_l,  # list[4] : quaternion
                              t_cs_l=t_gt[:, 0].tolist(),  # list[3]: meters
                              # new
                              R_ego_l=R_gt_q_l,  # list[4] : quaternion
                              t_ego_l=t_gt[:, 0].tolist(),  # list[3]: meters
-                             X_i_up_down=np.array([X_i_up, X_i_down]),
+                             # FIXME
+                             X_i_up_down=np.array([X_i_up, X_i_down]).tolist(),
                              # np.ndarray(2, n, 3): first index: # center + height/2, center - height/2
                              # Apparently this is not used...
                              two_d_cmcs=boxes_8_points_2d_old, # "OLD 2D boxes"

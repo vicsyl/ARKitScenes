@@ -50,14 +50,6 @@ def append_entry(entries_list,
     Returns:
     """
 
-    boxes_2d = boxes_2d.tolist()
-    x_i = x_i.tolist()
-    X_i = X_i.tolist()
-    X_i_up_down = X_i_up_down.tolist()
-    K = K.tolist()
-    if two_d_cmcs is not None:
-        two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
-
     entry_map = {"x_i": x_i,
                "boxes_2d": boxes_2d,
                "vis_file_path": vis_img_path,
