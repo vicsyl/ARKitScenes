@@ -1,8 +1,6 @@
 import argparse
-import glob
 import math
 import os
-import re
 import time
 from collections import defaultdict
 
@@ -12,10 +10,11 @@ import numpy as np
 import utils.box_utils as box_utils
 from common.common_transforms import evaluate_pose, project_from_frame_R_t
 from common.common_transforms import get_deviation_from_axis, get_deviation_from_plane, X_AXIS, Z_AXIS, Y_AXIS
-from common.data_parsing import parse, ConfStatic
+from common.data_parsing import parse, Configuration, get_cached_data, save
 from common.fitting import fit_min_area_rect
-from common.vanishing_point import get_directions, get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit
-from data_utils import append_entry, save
+from common.vanishing_point import get_directions, get_main_directions, get_vps, change_r_arkit, change_x_3d_arkit, \
+    get_widths_heights
+from data_utils import append_entry
 from decomposition import RotSampler, Rot, Smp, RSampling
 from pnp_utils import *
 from utils.taxonomy import class_names, ARKitDatasetConfig
@@ -31,43 +30,6 @@ class DataPrepareConf:
     visualize_main_directions = True
     visualize_vanishing_point = False
     visualize_rest = False
-
-
-def get_cached_data(base_file_path, format_suffix, out_log=False):
-
-    def log(s):
-        if out_log:
-            print(s)
-
-    # TODO objects_counts_map caching
-    paths = glob.glob(f"{base_file_path}_sp=*{format_suffix}")
-    log(f"Cached paths: {paths}")
-
-    max_cached_path = None
-    max = -1
-    for path in paths:
-        re_s = f".*ARKitScenes.*sp=(.*){format_suffix}"
-        result = re.search(re_s, path)
-        if not result:
-            print(f"checked path: {path} for {re_s}, found nothing!")
-            continue
-        count = int(result.group(1))
-        log(f"checked path: {path} for {re_s}, found count: {count}")
-        if count > max:
-            max_cached_path = path
-            max = count
-
-    if max_cached_path:
-        print(f"Will cache from {max_cached_path}")
-        config = parse(max_cached_path)
-        data_entries = list(config['metropolis_data'])
-        min_counts_map = config['samples_with_at_least_n_objects']
-    else:
-        data_entries = []
-        min_counts_map = defaultdict(int)
-        print("No cache found")
-
-    return data_entries, max if max != -1 else 0, min_counts_map
 
 
 # TODO make it arkit agnostic
@@ -90,7 +52,8 @@ def visualize(frame,
               centers_proj_in_2d,
               boxes_crns,
               scene_id,
-              file_name):
+              file_name,
+              show):
 
     def vis_directions_from_center(center, dir_l, fmt, label, linewidth=2):
         dir_vis = np.vstack((center, center + dir_l))
@@ -178,6 +141,7 @@ def visualize(frame,
     ])
 
     title = ""
+    title += log_title(f"b2d: {boxes_2d}")
     # title += log_title(f"boxes:{np.vstack((boxes_2d, boxes_2d, boxes_2d))}")
     pretty_gt, _, _ = sampler.decompose_and_info(R_gt)
     title += log_title(f"R_gt={pretty_gt}")
@@ -296,6 +260,8 @@ def visualize(frame,
     Path(f"imgs/{scene_id}/ok").mkdir(parents=True, exist_ok=True)
     Path(f"imgs/{scene_id}/all").mkdir(parents=True, exist_ok=True)
     plt.savefig(file_name, bbox_inches='tight')
+    if show:
+        plt.show()
     plt.close()
     print(f"{file_name} saved")
     np.set_printoptions(**printoptions)
@@ -337,8 +303,9 @@ def main():
     parser.add_argument(
         "--output_dir", default="../sample_data/online_prepared_data/", help="directory to save the data and annoation"
     )
-    parser.add_argument("--format_suffix", type=str, default=ConfStatic.toml_suffix)
+    parser.add_argument("--format_suffix", type=str, default=Configuration.toml_suffix)
     parser.add_argument("--vis", action="store_true", default=False)
+    parser.add_argument("--show", action="store_true", default=False)
     parser.add_argument("--min_corners", type=int, default=6)
     parser.add_argument("--min_scenes", type=int, default=0)
     parser.add_argument("--max_scenes", type=int, default=None)
@@ -361,7 +328,7 @@ def main():
     base_file_path = f"{out_hocon_dir}/ARKitScenes=obj={min_objects}{min_max_infix}{ang_infix}"
     print(f"Will save into: {base_file_path}")
 
-    data_entries, cached_scenes_count, min_counts_map = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
+    data_entries, cached_scenes_count, min_counts_map, _ = get_cached_data(base_file_path, format_suffix=args.format_suffix, out_log=True)
 
     # first min/max, then cached data_entries
     scenes = get_scene_ids_gts(args.data_root)
@@ -623,11 +590,8 @@ def main():
             objects_counts_map[obj_count] += 1
 
             boxes_8_points_2d_old = [np.array(l).T for l in boxes_8_points_2d_old]
+            widths_heights_new = get_widths_heights(boxes_2d)
             boxes_2d = np.array(boxes_2d)
-            widths_heights_new = []
-            if boxes_2d.shape[0] > 0:
-                all_chosen_2d_dirs, all_heights, all_centers_2d = get_directions(boxes_2d)
-                widths_heights_new = np.hstack((all_heights[:, None], all_heights[:, None])).tolist()
 
             if obj_count >= min_objects and (is_R_y or is_x_hor or is_z_hor):
 
@@ -699,6 +663,7 @@ def main():
                           R_gt_new,
                           t_gt,
                           lwhs,
+                          # it is x, y!
                           boxes_2d,
                           boxes_8_points_2d_old,
                           widths_heights_old,
@@ -712,7 +677,8 @@ def main():
                           centers_proj_in_2d,
                           boxes_crns,
                           scene_id,
-                          vis_file_path)
+                          vis_file_path,
+                          args.show)
 
         elapased = time.time() - start_time_scene
         print(f"elapsed time for scene {scene_id}: %f sec" % elapased)
