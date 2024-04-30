@@ -1,5 +1,7 @@
 import numpy as np
 
+from common.vanishing_point import normalize_projections
+
 
 def R_t_from_frame_pose(frame_pose):
     inv = np.linalg.inv(frame_pose)
@@ -15,7 +17,5 @@ def project_from_frame(K, frame_pose, row_points):
         (columns, np.ones((1, columns.shape[1])))
     )
     projections = K @ ((np.linalg.inv(frame_pose) @ augmented)[:3])
-    in_front = np.sign(projections[2])
-    projections = projections / projections[2]
-    projections[2] *= in_front
+    projections = normalize_projections(projections)
     return projections.T

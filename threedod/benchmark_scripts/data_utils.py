@@ -3,25 +3,22 @@ import numpy as np
 from common.data_parsing import save_to_file
 
 
-def save(fp, entries, objects_counts_map=None, conf_attribute_map={}):
+def save(fp, entries, objects_counts_map, at_least_objects_counts_map, conf_attribute_map={}, all_formats=False):
 
-    at_least_objects_counts_map = {}
-    # TODO test with None
-    if objects_counts_map is not None:
-        at_least_n_sum = 0
-        for obj, count in objects_counts_map.items():
-            if obj > 10:
-                at_least_n_sum += count
-        for at_least in range(10, 0, -1):
-            if objects_counts_map.__contains__(at_least):
-                at_least_n_sum += objects_counts_map[at_least]
-            at_least_objects_counts_map[str(at_least)] = at_least_n_sum
+    at_least_n_sum = 0
+    for obj, count in objects_counts_map.items():
+        if obj > 10:
+            at_least_n_sum += count
+    for at_least in range(10, 0, -1):
+        if objects_counts_map.__contains__(at_least):
+            at_least_n_sum += objects_counts_map[at_least]
+        at_least_objects_counts_map[str(at_least)] += at_least_n_sum
 
     data = {'metropolis_data': entries,
             'samples_with_at_least_n_objects': at_least_objects_counts_map,
             'config': conf_attribute_map
             }
-    save_to_file(fp, data,both=True)
+    save_to_file(fp, data, all_formats=all_formats)
 
 
 def append_entry(entries_list,
@@ -45,7 +42,8 @@ def append_entry(entries_list,
                  widths_heights,
                  widths_heights_new,
                  sample_data_token,
-                 both_2D_3D):
+                 both_2D_3D,
+                 extra_map={}):
     """
     Args:
         entries_list:
@@ -77,9 +75,10 @@ def append_entry(entries_list,
     X_i = X_i.tolist()
     X_i_up_down = X_i_up_down.tolist()
     K = K.tolist()
-    two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
+    if two_d_cmcs is not None:
+        two_d_cmcs = np.transpose(np.array([t.T for t in two_d_cmcs]), (1, 0, 2)).tolist()
 
-    p3p_map = {"x_i": x_i,
+    entry_map = {"x_i": x_i,
                "boxes_2d": boxes_2d,
                "vis_file_path": vis_img_path,
                "orig_file_path": orig_img_path,
@@ -102,4 +101,8 @@ def append_entry(entries_list,
                "scene": scene_token,
                "sample_data": sample_data_token,
                "instances": both_2D_3D}
-    entries_list.append(p3p_map)
+
+    for k, v in extra_map.items():
+        entry_map[k] = v
+
+    entries_list.append(entry_map)
